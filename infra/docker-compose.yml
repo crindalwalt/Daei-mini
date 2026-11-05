@@ -1,0 +1,259 @@
+###############################################################################
+# ThinkCode Full-Stack Template — Docker Compose Stack
+#
+# Services:
+#   - nginx:     Nginx Gateway + React SPA static files + FastCGI reverse proxy
+#   - backend:   Laravel 13 API on PHP 8.4-FPM
+#   - queue:     Laravel queue worker (redis)
+#   - scheduler: Laravel periodic task scheduler
+#   - postgres:  PostgreSQL 17 database
+#   - redis:     Redis 7 cache, session, and queue broker (AOF persistence enabled)
+#
+# Deployment Compatibility:
+#   - Coolify Traefik reverse proxy ready
+#   - Local development override via docker-compose.dev.yml
+###############################################################################
+
+services:
+  # ── Nginx Gateway & React SPA ─────────────────────────────────────────────
+  nginx:
+    build:
+      context: ..
+      dockerfile: infra/coolify/docker/nginx/Dockerfile
+      args:
+        VITE_API_URL: "/api/v1"
+        VITE_APP_NAME: "${APP_NAME:-ThinkCode}"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - thinkcode_storage:/var/www/backend/storage/app/public:ro
+    networks:
+      - thinkcode_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      - "traefik.enable=true"
+
+  # ── Laravel 13 API Backend (PHP 8.4-FPM) ──────────────────────────────────
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/coolify/docker/php/Dockerfile
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+    environment:
+      APP_NAME: "${APP_NAME:-ThinkCode}"
+      APP_ENV: "${APP_ENV:-production}"
+      APP_KEY: "${APP_KEY:-}"
+      APP_DEBUG: "${APP_DEBUG:-false}"
+      APP_URL: "${APP_URL:-http://localhost:8080}"
+      FRONTEND_URL: "${FRONTEND_URL:-http://localhost:8080}"
+      SANCTUM_STATEFUL_DOMAINS: "${SANCTUM_STATEFUL_DOMAINS:-localhost:8080,localhost:5173,localhost:3000,127.0.0.1:8080,127.0.0.1:5173}"
+
+      # Database
+      DB_CONNECTION: "${DB_CONNECTION:-pgsql}"
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_DATABASE: "${DB_DATABASE:-thinkcode}"
+      DB_USERNAME: "${DB_USERNAME:-thinkcode_user}"
+      DB_PASSWORD: "${DB_PASSWORD:-thinkcode_db_secret}"
+
+      # Cache / Session / Queue
+      CACHE_STORE: "${CACHE_STORE:-redis}"
+      QUEUE_CONNECTION: "${QUEUE_CONNECTION:-redis}"
+      SESSION_DRIVER: "${SESSION_DRIVER:-redis}"
+      SESSION_LIFETIME: "${SESSION_LIFETIME:-120}"
+
+      # Redis
+      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-thinkcode_redis_secret}"
+      REDIS_CLIENT: "${REDIS_CLIENT:-phpredis}"
+
+      # Logging & Storage
+      LOG_CHANNEL: "${LOG_CHANNEL:-stack}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      FILESYSTEM_DISK: "${FILESYSTEM_DISK:-local}"
+
+      # Mail
+      MAIL_MAILER: "${MAIL_MAILER:-log}"
+      MAIL_HOST: "${MAIL_HOST:-127.0.0.1}"
+      MAIL_PORT: "${MAIL_PORT:-2525}"
+      MAIL_USERNAME: "${MAIL_USERNAME:-}"
+      MAIL_PASSWORD: "${MAIL_PASSWORD:-}"
+      MAIL_ENCRYPTION: "${MAIL_ENCRYPTION:-null}"
+      MAIL_FROM_ADDRESS: "${MAIL_FROM_ADDRESS:-noreply@thinkcode.dev}"
+      MAIL_FROM_NAME: "${MAIL_FROM_NAME:-ThinkCode}"
+
+      # Entrypoint Flags (Production defaults: fail-safe and deterministic)
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-false}"
+      RUN_SEED: "${RUN_SEED:-false}"
+      RUN_CACHE: "${RUN_CACHE:-true}"
+      GENERATE_APP_KEY: "${GENERATE_APP_KEY:-false}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}"
+      ALLOW_REGISTRATION: "${ALLOW_REGISTRATION:-true}"
+    volumes:
+      - thinkcode_storage:/var/www/backend/storage/app/public
+    networks:
+      - thinkcode_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r '$$fp = @fsockopen(\"127.0.0.1\", 9000, $$errno, $$errstr, 2); if ($$fp) { fclose($$fp); exit(0); } exit(1);'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # ── Laravel Queue Worker ───────────────────────────────────────────────────
+  queue:
+    build:
+      context: ..
+      dockerfile: infra/coolify/docker/php/Dockerfile
+    command: ["php", "artisan", "queue:work", "redis", "--tries=3", "--timeout=90", "--sleep=3"]
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+    environment:
+      APP_NAME: "${APP_NAME:-ThinkCode}"
+      APP_ENV: "${APP_ENV:-production}"
+      APP_KEY: "${APP_KEY:-}"
+      APP_DEBUG: "${APP_DEBUG:-false}"
+      DB_CONNECTION: "${DB_CONNECTION:-pgsql}"
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_DATABASE: "${DB_DATABASE:-thinkcode}"
+      DB_USERNAME: "${DB_USERNAME:-thinkcode_user}"
+      DB_PASSWORD: "${DB_PASSWORD:-thinkcode_db_secret}"
+      CACHE_STORE: "${CACHE_STORE:-redis}"
+      QUEUE_CONNECTION: "${QUEUE_CONNECTION:-redis}"
+      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-thinkcode_redis_secret}"
+      RUN_MIGRATIONS: "false"
+      RUN_SEED: "false"
+      RUN_CACHE: "false"
+      GENERATE_APP_KEY: "false"
+    volumes:
+      - thinkcode_storage:/var/www/backend/storage/app/public
+    networks:
+      - thinkcode_network
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep -q 'artisan queue:work'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Laravel Task Scheduler ────────────────────────────────────────────────
+  scheduler:
+    build:
+      context: ..
+      dockerfile: infra/coolify/docker/php/Dockerfile
+    command: ["php", "artisan", "schedule:work"]
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+    environment:
+      APP_NAME: "${APP_NAME:-ThinkCode}"
+      APP_ENV: "${APP_ENV:-production}"
+      APP_KEY: "${APP_KEY:-}"
+      APP_DEBUG: "${APP_DEBUG:-false}"
+      DB_CONNECTION: "${DB_CONNECTION:-pgsql}"
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_DATABASE: "${DB_DATABASE:-thinkcode}"
+      DB_USERNAME: "${DB_USERNAME:-thinkcode_user}"
+      DB_PASSWORD: "${DB_PASSWORD:-thinkcode_db_secret}"
+      CACHE_STORE: "${CACHE_STORE:-redis}"
+      QUEUE_CONNECTION: "${QUEUE_CONNECTION:-redis}"
+      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-thinkcode_redis_secret}"
+      RUN_MIGRATIONS: "false"
+      RUN_SEED: "false"
+      RUN_CACHE: "false"
+      GENERATE_APP_KEY: "false"
+    volumes:
+      - thinkcode_storage:/var/www/backend/storage/app/public
+    networks:
+      - thinkcode_network
+    depends_on:
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep -q 'artisan schedule:work'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+    environment:
+      POSTGRES_DB: "${DB_DATABASE:-thinkcode}"
+      POSTGRES_USER: "${DB_USERNAME:-thinkcode_user}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-thinkcode_db_secret}"
+    volumes:
+      - thinkcode_db_data:/var/lib/postgresql/data
+    networks:
+      - thinkcode_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-thinkcode_user} -d ${DB_DATABASE:-thinkcode}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ── Redis Cache & Queue Broker ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-thinkcode_redis_secret}"]
+    volumes:
+      - thinkcode_redis_data:/data
+    networks:
+      - thinkcode_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-thinkcode_redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+# ── Volumes ─────────────────────────────────────────────────────────────────
+volumes:
+  thinkcode_db_data:
+    driver: local
+  thinkcode_redis_data:
+    driver: local
+  thinkcode_storage:
+    driver: local
+
+# ── Networks ────────────────────────────────────────────────────────────────
+networks:
+  thinkcode_network:
+    driver: bridge
