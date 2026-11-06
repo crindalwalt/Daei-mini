@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Enums\UserRole;
+use App\Http\Responses\ApiResponse;
 use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -27,27 +29,24 @@ class AppServiceProvider extends ServiceProvider
         // Rate limiter for authentication attempts (email + IP)
         RateLimiter::for('login', function (Request $request) {
             $throttleKey = strtolower((string) $request->input('email')).'|'.$request->ip();
+
             return Limit::perMinute(5)->by($throttleKey)->response(function () {
-                return response()->json([
-                    'message' => 'Too many login attempts. Please try again later.',
-                ], 429);
+                return ApiResponse::error('Too many login attempts. Please try again later.', 429);
             });
         });
 
         // Rate limiter for personal access token issuance
         RateLimiter::for('tokens', function (Request $request) {
             $throttleKey = strtolower((string) $request->input('email')).'|'.$request->ip();
+
             return Limit::perMinute(5)->by($throttleKey)->response(function () {
-                return response()->json([
-                    'message' => 'Too many token generation attempts. Please try again later.',
-                ], 429);
+                return ApiResponse::error('Too many token generation attempts. Please try again later.', 429);
             });
         });
 
-        // Demonstration Gate for authorization foundation
+        // Role-based authorization gate for administrative actions.
         Gate::define('view-admin-dashboard', function (User $user) {
-            return str_ends_with($user->email, '@thinkcode.dev')
-                || $user->email === 'admin@thinkcode.dev';
+            return $user->role === UserRole::Admin;
         });
     }
 }

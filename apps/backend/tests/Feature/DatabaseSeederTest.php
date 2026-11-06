@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -25,11 +24,13 @@ class DatabaseSeederTest extends TestCase
     {
         $this->app->detectEnvironment(fn () => 'production');
 
-        $this->seed(DatabaseSeeder::class);
+        $this->artisan('db:seed', [
+            '--class' => DatabaseSeeder::class,
+            '--force' => true,
+        ])->assertSuccessful();
 
         $this->assertDatabaseMissing('users', [
             'email' => 'admin@thinkcode.dev',
         ]);
     }
 }
-

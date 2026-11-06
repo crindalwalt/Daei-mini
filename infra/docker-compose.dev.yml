@@ -1,27 +1,66 @@
 ###############################################################################
-# ThinkCode Full-Stack Template — Local Development Compose Override
+# Project-Daei — Local Development Compose
 #
 # Usage:
-#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d
-#   or via Makefile: `make up`
+#   docker compose -f infra/docker-compose.dev.yml up -d
+#
+# Provides PostgreSQL and Redis for host-based Laravel development, plus a
+# lightweight nginx gateway. The Laravel API runs on the host at :8000.
 ###############################################################################
 
+name: daei-mini-dev
+
 services:
+  # ── Nginx Gateway ──────────────────────────────────────────────────────────
   nginx:
+    image: nginx:alpine
+    restart: unless-stopped
     ports:
       - "${FORWARD_HTTP_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
-  backend:
-    environment:
-      APP_ENV: "local"
-      APP_DEBUG: "true"
-      RUN_MIGRATIONS: "true"
-      GENERATE_APP_KEY: "true"
-
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
   postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${DB_DATABASE:-thinkcode}"
+      POSTGRES_USER: "${DB_USERNAME:-thinkcode_user}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-thinkcode_db_secret}"
     ports:
       - "${FORWARD_DB_PORT:-5433}:5432"
+    volumes:
+      - thinkcode_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-thinkcode_user} -d ${DB_DATABASE:-thinkcode}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
+  # ── Redis Cache, Queue & Session Broker ────────────────────────────────────
   redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-thinkcode_redis_secret}"]
     ports:
       - "${FORWARD_REDIS_PORT:-6379}:6379"
+    volumes:
+      - thinkcode_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-thinkcode_redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  thinkcode_db_data:
+    driver: local
+  thinkcode_redis_data:
+    driver: local

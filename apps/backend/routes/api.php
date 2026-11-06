@@ -36,6 +36,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('auth')->group(function () {
             Route::get('/me', [AuthController::class, 'me']);
+            Route::patch('/profile', [AuthController::class, 'updateProfile']);
             Route::post('/logout', [AuthController::class, 'logout']);
         });
 
@@ -49,7 +50,7 @@ Route::prefix('v1')->group(function () {
         // Demo protected resources
         Route::get('/tasks', [DemoController::class, 'tasks']);
         Route::post('/queue-test', [DemoController::class, 'dispatchJob']);
-        Route::get('/admin-check', [DemoController::class, 'adminOnly']);
+        Route::get('/admin-check', [DemoController::class, 'adminOnly'])->middleware('role:admin');
     });
 });
 

@@ -39,7 +39,7 @@ class AuthorizationTest extends TestCase
 
     public function test_authorized_user_receives_200(): void
     {
-        $adminUser = User::factory()->create([
+        $adminUser = User::factory()->admin()->create([
             'email' => 'admin@thinkcode.dev',
         ]);
 
@@ -54,4 +54,3 @@ class AuthorizationTest extends TestCase
             ]);
     }
 }
-
