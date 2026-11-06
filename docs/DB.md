@@ -798,3 +798,421 @@ Daei Mini's proposed Laravel/PostgreSQL database supports user authentication, r
 The database design follows the project's stated scope and preserves its exclusions. Pending decisions—especially local database technology, offline module coverage, synchronization conflict handling, prayer-time calculations, digital library content, and reminder delivery—must be finalized before implementation is treated as production-ready.
 
 **Document status:** Database architecture draft for technical review.
+
+# 15. Additional Database Modules
+
+The following modules extend the existing database architecture without replacing any previously defined tables, relationships, migrations, models, or rules.
+
+## 15.1 Admin Shared Timetable
+
+The system must support Admin-created timetables that can be assigned to individual users or groups.
+
+### shared_timetables
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| uuid | UUID | Unique public identifier |
+| title | VARCHAR(255) | Timetable title |
+| description | TEXT NULL | Timetable description |
+| created_by | BIGINT | Admin user ID |
+| start_date | DATE NULL | Timetable start date |
+| end_date | DATE NULL | Timetable end date |
+| status | VARCHAR(30) | draft, published, archived |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+### shared_timetable_activities
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| shared_timetable_id | BIGINT | Related shared timetable |
+| title | VARCHAR(255) | Activity title |
+| description | TEXT NULL | Activity details |
+| activity_date | DATE | Scheduled date |
+| start_time | TIME NULL | Start time |
+| end_time | TIME NULL | End time |
+| sort_order | INTEGER DEFAULT 0 | Display order |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+### shared_timetable_assignments
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| shared_timetable_id | BIGINT | Related timetable |
+| user_id | BIGINT NULL | Assigned individual user |
+| group_id | BIGINT NULL | Assigned group |
+| assigned_by | BIGINT | Admin user ID |
+| assigned_at | TIMESTAMP | Assignment timestamp |
+
+**Database Rules:**
+- Exactly one of `user_id` or `group_id` must be provided.
+- Only Admin users can create and assign shared timetables.
+- Users can view timetables assigned to them or their groups.
+- Assignment permissions must be enforced by Laravel policies.
+
+### shared_activity_completions
+
+Tracks each user's completion of shared activities independently.
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| shared_timetable_activity_id | BIGINT | Related activity |
+| user_id | BIGINT | User who performed the activity |
+| status | VARCHAR(30) | pending, completed, skipped |
+| completed_at | TIMESTAMP NULL | Completion time |
+| notes | TEXT NULL | Optional notes |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+**Constraint:** Unique combination of `shared_timetable_activity_id` and `user_id`.
+
+An individual user's completion must never automatically mark the activity completed for other assigned users.
+
+---
+
+## 15.2 Digital Library
+
+The Digital Library stores learning resources and their metadata. Actual files should be stored using a configured file-storage provider, not directly inside PostgreSQL.
+
+### library_resources
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| uuid | UUID | Unique identifier |
+| title | VARCHAR(255) | Resource title |
+| description | TEXT NULL | Resource description |
+| file_name | VARCHAR(255) | Original file name |
+| storage_disk | VARCHAR(100) | Laravel storage disk |
+| storage_path | TEXT | Stored file location |
+| mime_type | VARCHAR(150) | File MIME type |
+| file_size | BIGINT | File size in bytes |
+| uploaded_by | BIGINT | Admin user ID |
+| visibility | VARCHAR(30) | private, assigned, public |
+| status | VARCHAR(30) | active, archived |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+### library_resource_permissions
+
+Controls access to resources assigned to specific users or groups.
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| library_resource_id | BIGINT | Related resource |
+| user_id | BIGINT NULL | Individual user |
+| group_id | BIGINT NULL | Assigned group |
+| created_at | TIMESTAMP | Creation timestamp |
+
+**Database Rules:**
+- Exactly one of `user_id` or `group_id` must be provided.
+- Only authorized users can access protected resources.
+- File access must use Laravel authorization and secure storage URLs.
+- Deleting a resource must follow an approved file-cleanup process.
+
+---
+
+## 15.3 User Bookmarks
+
+Users can bookmark Digital Library resources.
+
+### bookmarks
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| user_id | BIGINT | Bookmark owner |
+| library_resource_id | BIGINT | Bookmarked resource |
+| created_at | TIMESTAMP | Bookmark timestamp |
+
+**Constraints:**
+- Unique combination of `user_id` and `library_resource_id`.
+- A user can only manage their own bookmarks.
+- Removing a bookmark must not delete the original resource.
+
+---
+
+## 15.4 Health and Fitness Records
+
+The system must support personal exercise and fitness activity records.
+
+### exercise_records
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| uuid | UUID | Unique identifier |
+| user_id | BIGINT | Record owner |
+| exercise_type | VARCHAR(100) | Exercise category |
+| title | VARCHAR(255) | Exercise title |
+| duration_minutes | INTEGER NULL | Duration |
+| distance | DECIMAL(10,2) NULL | Distance, when applicable |
+| calories_burned | DECIMAL(10,2) NULL | Estimated calories |
+| notes | TEXT NULL | Additional details |
+| recorded_at | TIMESTAMP | Activity date and time |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+**Database Rules:**
+- Users can only manage their own exercise records.
+- Duration and distance must be non-negative.
+- Fitness records must remain private unless sharing is explicitly introduced.
+- Health-related data must not be exposed to unauthorized users.
+
+---
+
+## 15.5 Prayer Location Preferences
+
+Store user-specific preferences required for prayer-time configuration.
+
+### user_prayer_preferences
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| user_id | BIGINT | Related user |
+| latitude | DECIMAL(10,7) NULL | Latitude |
+| longitude | DECIMAL(10,7) NULL | Longitude |
+| timezone | VARCHAR(100) | User timezone |
+| calculation_method | VARCHAR(100) NULL | Selected calculation method |
+| notifications_enabled | BOOLEAN DEFAULT TRUE | Prayer notifications preference |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+**Constraints and Rules:**
+- One preference record per user.
+- `user_id` must be unique.
+- Latitude must be between -90 and 90.
+- Longitude must be between -180 and 180.
+- Location data must be private and used only for authorized functionality.
+- Prayer calculation rules and supported methods require product confirmation.
+
+---
+
+## 15.6 Firebase Cloud Messaging Device Tokens
+
+Store device tokens required for push notifications.
+
+### device_tokens
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| user_id | BIGINT | Related user |
+| device_token | TEXT | FCM registration token |
+| device_type | VARCHAR(30) | android, ios, web |
+| device_identifier | VARCHAR(255) NULL | Device identifier |
+| is_active | BOOLEAN DEFAULT TRUE | Token status |
+| last_used_at | TIMESTAMP NULL | Last token usage |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+**Database Rules:**
+- Tokens must not be exposed through public APIs.
+- Invalid or expired tokens should be deactivated.
+- A user may have multiple registered devices.
+- Token updates must not create unnecessary duplicate records.
+- Logout and device removal must follow the approved token lifecycle.
+
+**Pending Decision:** Confirm whether Firebase is being used only for FCM notifications or whether other Firebase services are also required. The Laravel + PostgreSQL architecture remains the primary application backend and database unless the project scope is formally changed.
+
+---
+
+# 16. Offline Synchronization and Conflict Management
+
+The system must support offline activity and later synchronization with the Laravel backend.
+
+## 16.1 Synchronization Metadata
+
+Offline-capable records should include the following fields where applicable:
+
+| Column | Type | Description |
+|---|---|---|
+| uuid | UUID | Stable client-generated record identifier |
+| client_created_at | TIMESTAMP NULL | Creation time on client |
+| client_updated_at | TIMESTAMP NULL | Last client-side update |
+| server_version | BIGINT DEFAULT 1 | Server record version |
+| synced_at | TIMESTAMP NULL | Last successful synchronization |
+| deleted_at | TIMESTAMP NULL | Soft-delete timestamp |
+
+The existing primary key and relationships must remain unchanged. UUIDs provide stable identification across devices.
+
+## 16.2 user_devices
+
+Tracks devices registered for synchronization.
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| uuid | UUID | Unique device identifier |
+| user_id | BIGINT | Device owner |
+| device_name | VARCHAR(255) NULL | Device name |
+| platform | VARCHAR(50) | Device platform |
+| last_sync_at | TIMESTAMP NULL | Last successful sync |
+| is_active | BOOLEAN DEFAULT TRUE | Device status |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+## 16.3 sync_operations
+
+Tracks synchronization requests and prevents duplicate processing.
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| operation_uuid | UUID | Unique idempotency identifier |
+| user_id | BIGINT | Request owner |
+| device_id | BIGINT NULL | Related device |
+| entity_type | VARCHAR(100) | Allowed entity name |
+| entity_uuid | UUID | Target record UUID |
+| operation_type | VARCHAR(30) | create, update, delete |
+| status | VARCHAR(30) | pending, completed, failed |
+| error_message | TEXT NULL | Error details |
+| processed_at | TIMESTAMP NULL | Processing timestamp |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+**Constraints:**
+- `operation_uuid` must be unique.
+- Repeated requests with the same operation UUID must not create duplicate data.
+- Entity types must be validated using a server-side allowlist.
+- Users must not synchronize records belonging to other users.
+
+## 16.4 sync_conflicts
+
+Stores records where the client and server have conflicting changes.
+
+| Column | Type | Description |
+|---|---|---|
+| id | BIGINT | Primary key |
+| conflict_uuid | UUID | Unique conflict identifier |
+| user_id | BIGINT | Related user |
+| entity_type | VARCHAR(100) | Entity name |
+| entity_uuid | UUID | Target record |
+| client_version | BIGINT NULL | Client record version |
+| server_version | BIGINT | Server record version |
+| client_payload | JSONB NULL | Client-side data |
+| server_payload | JSONB NULL | Server-side data |
+| resolution_status | VARCHAR(30) | pending, resolved, rejected |
+| resolution_type | VARCHAR(50) NULL | Applied resolution |
+| resolved_at | TIMESTAMP NULL | Resolution time |
+| created_at | TIMESTAMP | Creation timestamp |
+| updated_at | TIMESTAMP | Update timestamp |
+
+**Conflict Management Rules:**
+- The backend must detect version conflicts.
+- A conflicting update must not silently overwrite server data.
+- Conflict resolution must follow a documented policy.
+- Sensitive records must remain private during synchronization.
+- Tombstones or soft-delete metadata must prevent deleted records from unexpectedly reappearing during sync.
+
+**Pending Decision:** Final conflict resolution strategy must be approved before implementation. Possible strategies include server-wins, client-wins for selected fields, or manual resolution.
+
+---
+
+# 17. Database Integrity, Access Control and Business Rules
+
+The following rules must be enforced through Laravel validation, policies, database constraints, and transactions where appropriate.
+
+1. Only Admin users can create groups and assign users to groups.
+2. Users can manage only their own private timetable and personal records.
+3. Only Admin users can create and assign shared timetables.
+4. Shared activity completion must be tracked separately for each user.
+5. Admin users may comment on daily reports but must not modify the user's original report content.
+6. Journal entries and private personal records must not be visible to unauthorized users.
+7. Digital Library permissions must be checked before returning file access.
+8. Bookmarks must always belong to their respective users.
+9. Prayer location preferences must be protected as private user data.
+10. FCM tokens must be protected and managed through authenticated operations.
+11. Offline synchronization must prevent duplicate operations.
+12. Historical reports must follow the approved editing and locking policy.
+13. Foreign keys must use appropriate deletion behavior to preserve data integrity.
+14. Multi-step operations must use database transactions where required.
+
+---
+
+# 18. Recommended Indexes and Constraints
+
+Recommended indexes for the additional modules:
+
+| Table | Index / Constraint |
+|---|---|
+| shared_timetables | created_by, status |
+| shared_timetable_activities | shared_timetable_id, activity_date |
+| shared_timetable_assignments | user_id, group_id |
+| shared_activity_completions | UNIQUE(shared_timetable_activity_id, user_id) |
+| library_resources | uploaded_by, visibility, status |
+| library_resource_permissions | library_resource_id, user_id, group_id |
+| bookmarks | UNIQUE(user_id, library_resource_id) |
+| exercise_records | user_id, recorded_at |
+| user_prayer_preferences | UNIQUE(user_id) |
+| device_tokens | user_id, is_active |
+| sync_operations | UNIQUE(operation_uuid), user_id, status |
+| sync_conflicts | conflict_uuid, user_id, resolution_status |
+| user_devices | UNIQUE(uuid), user_id |
+
+Use PostgreSQL foreign keys, unique constraints, check constraints, and appropriate indexes. Migration definitions must match the final approved relationships and deletion rules.
+
+---
+
+# 19. Updated Database Acceptance Checklist
+
+## Authentication and Access
+- [ ] User authentication and API authorization are implemented.
+- [ ] Admin and User permissions are enforced.
+- [ ] Only Admin can create groups and assign users.
+
+## Timetables
+- [ ] Users can manage their private timetables.
+- [ ] Admin can create shared timetables.
+- [ ] Admin can assign shared timetables to users or groups.
+- [ ] Individual activity completion is tracked per user.
+
+## Habits, Goals and Reports
+- [ ] Habit completion history is maintained.
+- [ ] Goal progress is stored correctly.
+- [ ] Journal entries support offline storage and synchronization.
+- [ ] Daily reports support offline storage and synchronization.
+- [ ] Admin can comment without editing the original user report.
+
+## Digital Library
+- [ ] Resource metadata is stored.
+- [ ] File storage references are maintained.
+- [ ] Access permissions are enforced.
+- [ ] Users can create and remove personal bookmarks.
+
+## Health and Prayer
+- [ ] Exercise records are stored per user.
+- [ ] Prayer location and timezone preferences are stored securely.
+
+## Notifications and Synchronization
+- [ ] FCM device tokens are stored securely.
+- [ ] Devices can be registered for synchronization.
+- [ ] UUID-based record identification is implemented.
+- [ ] Duplicate sync operations are prevented.
+- [ ] Sync conflicts are detected and recorded.
+- [ ] Conflict resolution follows an approved policy.
+- [ ] Offline deletions are handled without data reappearing.
+
+---
+
+# 20. Final Implementation Notes
+
+1. Laravel is the primary backend framework.
+2. PostgreSQL is the primary relational database.
+3. Database schema changes must be implemented through Laravel migrations.
+4. Models must define relationships, casts, fillable fields, and required scopes.
+5. Factories and seeders must provide realistic development and testing data.
+6. Authorization must be enforced on the backend, not only in the frontend.
+7. Sensitive user data must never be exposed through unrestricted API responses.
+8. Offline synchronization must be idempotent and conflict-aware.
+9. File binaries must be stored in configured file storage; PostgreSQL stores their metadata and storage references.
+10. Any unresolved business rule must be approved before final implementation.
+
+All additions in Sections 15–20 extend the previously documented database architecture. They do not authorize removing or replacing existing sections.
