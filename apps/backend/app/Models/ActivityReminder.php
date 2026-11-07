@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ReminderChannel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -25,6 +26,7 @@ class ActivityReminder extends Model
         'user_id',
         'reminder_at',
         'is_enabled',
+        'channel',
         'client_created_at',
         'client_updated_at',
         'server_version',
@@ -42,6 +44,7 @@ class ActivityReminder extends Model
     protected $casts = [
         'reminder_at' => 'datetime',
         'is_enabled' => 'boolean',
+        'channel' => ReminderChannel::class,
         'client_created_at' => 'datetime',
         'client_updated_at' => 'datetime',
         'server_version' => 'integer',

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PrayerCalculationMethod;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -44,6 +45,7 @@ class UserPrayerPreference extends Model
     protected $casts = [
         'latitude' => 'decimal:7',
         'longitude' => 'decimal:7',
+        'calculation_method' => PrayerCalculationMethod::class,
         'notifications_enabled' => 'boolean',
         'client_created_at' => 'datetime',
         'client_updated_at' => 'datetime',

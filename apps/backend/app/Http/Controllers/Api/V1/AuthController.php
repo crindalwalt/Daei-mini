@@ -2,19 +2,24 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\PrayerCalculationMethod;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ForgotPasswordRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
+use App\Http\Requests\ResetPasswordRequest;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\User;
+use App\Models\UserPrayerPreference;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 
@@ -69,13 +74,24 @@ class AuthController extends Controller
             return ApiResponse::error('Registration is disabled.', 403);
         }
 
-        $user = User::create([
-            'name' => $request->string('name'),
-            'email' => $request->string('email'),
-            'password' => Hash::make($request->string('password')),
-            'role' => UserRole::User,
-            'is_active' => true,
-        ]);
+        $user = DB::transaction(function () use ($request): User {
+            $user = User::create([
+                'name' => $request->string('name'),
+                'email' => $request->string('email'),
+                'password' => Hash::make($request->string('password')),
+                'role' => UserRole::User,
+                'is_active' => true,
+            ]);
+
+            UserPrayerPreference::create([
+                'user_id' => $user->id,
+                'timezone' => config('app.timezone', 'UTC'),
+                'calculation_method' => PrayerCalculationMethod::MuslimWorldLeague,
+                'notifications_enabled' => true,
+            ]);
+
+            return $user;
+        });
 
         Auth::login($user);
 
@@ -137,6 +153,59 @@ class AuthController extends Controller
         return ApiResponse::success([
             'user' => new UserResource($user),
         ], 'Profile updated successfully.');
+    }
+
+    /**
+     * Dispatch a password reset link for the supplied email address.
+     */
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $email = $request->string('email')->toString();
+        $user = User::query()->where('email', $email)->first();
+        $data = ['email' => $email];
+
+        if ($user === null) {
+            // Never disclose whether an account exists.
+            return ApiResponse::success($data, 'If the account exists, a reset link has been sent.');
+        }
+
+        $status = Password::sendResetLink(['email' => $email]);
+
+        if ($status === Password::RESET_THROTTLED) {
+            return ApiResponse::error('Please wait before requesting another reset link.', 429);
+        }
+
+        if (! app()->isProduction()) {
+            $data['reset_token'] = Password::broker()->createToken($user);
+        }
+
+        return ApiResponse::success($data, 'If the account exists, a reset link has been sent.');
+    }
+
+    /**
+     * Reset the user's password using a broker-issued token.
+     */
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user, string $password): void {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                ])->save();
+
+                // Revoke every previously issued token after a credential reset.
+                $user->tokens()->delete();
+            },
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages([
+                'email' => [trans($status)],
+            ]);
+        }
+
+        return ApiResponse::success(null, 'Password reset successfully.');
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Enums\UserRole;
 use App\Http\Responses\ApiResponse;
 use App\Models\User;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -47,6 +48,16 @@ class AppServiceProvider extends ServiceProvider
         // Role-based authorization gate for administrative actions.
         Gate::define('view-admin-dashboard', function (User $user) {
             return $user->role === UserRole::Admin;
+        });
+
+        // Point password reset emails at the SPA instead of a missing web route.
+        ResetPassword::createUrlUsing(function (User $user, string $token): string {
+            $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
+
+            return $frontendUrl.'/reset-password?'.http_build_query([
+                'token' => $token,
+                'email' => $user->getEmailForPasswordReset(),
+            ]);
         });
     }
 }

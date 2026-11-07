@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ActivityStatus;
 use App\Enums\ActivityType;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -73,6 +74,11 @@ class Activity extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function scopeOwnedBy(Builder $query, User|int $user): Builder
+    {
+        return $query->where('user_id', $user instanceof User ? $user->id : $user);
+    }
+
     public function reminders(): HasMany
     {
         return $this->hasMany(ActivityReminder::class);
@@ -81,6 +87,11 @@ class Activity extends Model
     public function comments(): HasMany
     {
         return $this->hasMany(ActivityComment::class);
+    }
+
+    public function exerciseRecords(): HasMany
+    {
+        return $this->hasMany(ExerciseRecord::class);
     }
 
     public function dailyReportActivities(): HasMany

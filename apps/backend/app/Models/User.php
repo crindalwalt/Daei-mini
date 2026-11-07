@@ -158,6 +158,26 @@ class User extends Authenticatable
         return $this->hasOne(UserPrayerPreference::class);
     }
 
+    public function documents(): HasMany
+    {
+        return $this->hasMany(UserDocument::class);
+    }
+
+    public function inboxNotifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    public function healthRecords(): HasMany
+    {
+        return $this->hasMany(HealthRecord::class);
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role === UserRole::Admin;
+    }
+
     public function deviceTokens(): HasMany
     {
         return $this->hasMany(DeviceToken::class);

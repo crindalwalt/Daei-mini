@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\PrayerCalculationMethod;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateProfileRequest extends FormRequest
 {
@@ -25,7 +27,7 @@ class UpdateProfileRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'timezone' => ['sometimes', 'required', 'string', 'timezone'],
-            'calculation_method' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'calculation_method' => ['sometimes', 'nullable', Rule::enum(PrayerCalculationMethod::class)],
             'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
             'notifications_enabled' => ['sometimes', 'boolean'],

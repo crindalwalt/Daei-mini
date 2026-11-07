@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ActivityType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -25,6 +26,7 @@ class SharedTimetableActivity extends Model
         'shared_timetable_id',
         'title',
         'description',
+        'activity_type',
         'activity_date',
         'start_time',
         'end_time',
@@ -44,6 +46,7 @@ class SharedTimetableActivity extends Model
      * @var array<string, string>
      */
     protected $casts = [
+        'activity_type' => ActivityType::class,
         'activity_date' => 'date',
         'sort_order' => 'integer',
         'client_created_at' => 'datetime',

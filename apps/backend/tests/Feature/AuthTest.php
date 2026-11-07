@@ -364,4 +364,84 @@ class AuthTest extends TestCase
             $responseExisting->json('errors.email')
         );
     }
+
+    public function test_forgot_password_is_silent_for_unknown_email(): void
+    {
+        $response = $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => 'nobody@thinkcode.dev',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'message' => 'If the account exists, a reset link has been sent.',
+                'data' => ['email' => 'nobody@thinkcode.dev'],
+            ])
+            ->assertJsonMissingPath('data.reset_token');
+
+        $this->assertDatabaseMissing('password_reset_tokens', [
+            'email' => 'nobody@thinkcode.dev',
+        ]);
+    }
+
+    public function test_user_can_reset_password_with_issued_token(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'reset@thinkcode.dev',
+            'password' => Hash::make('OldPassword123!'),
+        ]);
+
+        // An existing token must be revoked by the credential reset.
+        $user->createToken('existing-session');
+
+        $this->assertDatabaseCount('personal_access_tokens', 1);
+
+        $token = $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => 'reset@thinkcode.dev',
+        ])->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->json('data.reset_token');
+
+        $this->assertNotEmpty($token);
+
+        $this->assertDatabaseHas('password_reset_tokens', [
+            'email' => 'reset@thinkcode.dev',
+        ]);
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'email' => 'reset@thinkcode.dev',
+            'token' => $token,
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ])->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'message' => 'Password reset successfully.',
+            ]);
+
+        $this->assertTrue(Hash::check('NewPassword123!', $user->refresh()->password));
+        $this->assertDatabaseMissing('password_reset_tokens', [
+            'email' => 'reset@thinkcode.dev',
+        ]);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
+    public function test_reset_password_rejects_invalid_token(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'invalid-reset@thinkcode.dev',
+            'password' => Hash::make('OldPassword123!'),
+        ]);
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'email' => 'invalid-reset@thinkcode.dev',
+            'token' => 'not-a-real-token',
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ])->assertStatus(422)
+            ->assertJson(['success' => false])
+            ->assertJsonValidationErrors('email');
+
+        $this->assertTrue(Hash::check('OldPassword123!', $user->refresh()->password));
+    }
 }

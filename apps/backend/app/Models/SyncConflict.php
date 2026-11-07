@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ConflictResolutionPolicy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
@@ -43,6 +44,7 @@ class SyncConflict extends Model
         'server_version' => 'integer',
         'client_payload' => 'array',
         'server_payload' => 'array',
+        'resolution_type' => ConflictResolutionPolicy::class,
         'resolved_at' => 'datetime',
     ];
 

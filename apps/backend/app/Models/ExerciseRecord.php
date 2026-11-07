@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -22,6 +23,7 @@ class ExerciseRecord extends Model
     protected $fillable = [
         'uuid',
         'user_id',
+        'activity_id',
         'exercise_type',
         'title',
         'duration_minutes',
@@ -67,5 +69,15 @@ class ExerciseRecord extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function activity(): BelongsTo
+    {
+        return $this->belongsTo(Activity::class);
+    }
+
+    public function scopeOwnedBy(Builder $query, User|int $user): Builder
+    {
+        return $query->where('user_id', $user instanceof User ? $user->id : $user);
     }
 }
