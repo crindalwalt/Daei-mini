@@ -94,6 +94,12 @@ export function LoginPage() {
                 {...register('email')}
               />
 
+              <div className="flex items-center justify-end">
+                <Link to="/forgot-password" className="text-sm font-semibold text-blue-600 hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
+
               <Input
                 label="Password"
                 type="password"

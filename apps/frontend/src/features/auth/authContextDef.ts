@@ -1,5 +1,5 @@
 import { createContext } from 'react'
-import type { AuthResponse, LoginCredentials, RegisterData, User } from '../../types/auth'
+import type { AuthResponse, ForgotPasswordData, ForgotPasswordResponse, LoginCredentials, RegisterData, ResetPasswordData, User } from '../../types/auth'
 
 export interface AuthContextType {
   user: User | null
@@ -8,6 +8,8 @@ export interface AuthContextType {
   login: (credentials: LoginCredentials) => Promise<AuthResponse>
   register: (data: RegisterData) => Promise<AuthResponse>
   logout: () => Promise<void>
+  forgotPassword: (data: ForgotPasswordData) => Promise<ForgotPasswordResponse>
+  resetPassword: (data: ResetPasswordData) => Promise<{ message: string }>
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined)

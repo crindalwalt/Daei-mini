@@ -1,7 +1,7 @@
 import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../lib/api/client'
-import type { AuthResponse, LoginCredentials, RegisterData, User } from '../../types/auth'
+import type { AuthResponse, ForgotPasswordData, ForgotPasswordResponse, LoginCredentials, RegisterData, ResetPasswordData, User } from '../../types/auth'
 import { AuthContext } from './authContextDef'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -51,6 +51,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
   })
 
+  // Forgot password mutation
+  const forgotPasswordMutation = useMutation({
+    mutationFn: (data: ForgotPasswordData) =>
+      apiClient.post<ForgotPasswordResponse>('/api/v1/auth/forgot-password', data),
+  })
+
+  // Reset password mutation
+  const resetPasswordMutation = useMutation({
+    mutationFn: (data: ResetPasswordData) =>
+      apiClient.post<{ message: string }>('/api/v1/auth/reset-password', data),
+  })
+
   const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {
     return loginMutation.mutateAsync(credentials)
   }
@@ -63,6 +75,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await logoutMutation.mutateAsync()
   }
 
+  const forgotPassword = async (data: ForgotPasswordData): Promise<ForgotPasswordResponse> => {
+    return forgotPasswordMutation.mutateAsync(data)
+  }
+
+  const resetPassword = async (data: ResetPasswordData): Promise<{ message: string }> => {
+    return resetPasswordMutation.mutateAsync(data)
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -72,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         register,
         logout,
+        forgotPassword,
+        resetPassword,
       }}
     >
       {children}

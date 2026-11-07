@@ -13,6 +13,22 @@ export interface LoginCredentials {
   device_name?: string
 }
 
+export interface ForgotPasswordData {
+  email: string
+}
+
+export interface ForgotPasswordResponse {
+  message: string
+  reset_token?: string
+}
+
+export interface ResetPasswordData {
+  token: string
+  email: string
+  password: string
+  password_confirmation: string
+}
+
 export interface RegisterData {
   name: string
   email: string

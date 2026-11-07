@@ -16,6 +16,8 @@ describe('LoginPage', () => {
       login: vi.fn(),
       register: vi.fn(),
       logout: vi.fn(),
+      forgotPassword: vi.fn(),
+      resetPassword: vi.fn(),
     })
 
     render(
@@ -33,6 +35,28 @@ describe('LoginPage', () => {
     })
   })
 
+  it('renders a forgot password link before the password field', () => {
+    vi.spyOn(authHook, 'useAuth').mockReturnValue({
+      user: null,
+      isLoading: false,
+      isAuthenticated: false,
+      login: vi.fn(),
+      register: vi.fn(),
+      logout: vi.fn(),
+      forgotPassword: vi.fn(),
+      resetPassword: vi.fn(),
+    })
+
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>
+    )
+
+    const forgotPasswordLink = screen.getByRole('link', { name: /forgot password/i })
+    expect(forgotPasswordLink).toHaveAttribute('href', '/forgot-password')
+  })
+
   it('populates demo credentials when clicking demo button', async () => {
     vi.spyOn(authHook, 'useAuth').mockReturnValue({
       user: null,
@@ -41,6 +65,8 @@ describe('LoginPage', () => {
       login: vi.fn(),
       register: vi.fn(),
       logout: vi.fn(),
+      forgotPassword: vi.fn(),
+      resetPassword: vi.fn(),
     })
 
     render(
@@ -71,6 +97,8 @@ describe('LoginPage', () => {
       login: mockLogin,
       register: vi.fn(),
       logout: vi.fn(),
+      forgotPassword: vi.fn(),
+      resetPassword: vi.fn(),
     })
 
     render(
