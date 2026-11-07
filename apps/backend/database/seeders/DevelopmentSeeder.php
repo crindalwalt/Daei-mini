@@ -450,7 +450,7 @@ class DevelopmentSeeder extends Seeder
             ['conflict_uuid' => 'c6000000-0000-4000-8000-000000000001'],
             [
                 'user_id' => $demo->id,
-                'entity_type' => 'journal_entry',
+                'entity_type' => 'journal_entries',
                 'entity_uuid' => $journal->uuid,
                 'client_version' => 2,
                 'server_version' => 3,
