@@ -169,15 +169,17 @@ class AuthController extends Controller
             return ApiResponse::success($data, 'If the account exists, a reset link has been sent.');
         }
 
-        $status = Password::sendResetLink(['email' => $email]);
-
-        if ($status === Password::RESET_THROTTLED) {
+        if (Password::broker()->getRepository()->recentlyCreatedToken($user)) {
             return ApiResponse::error('Please wait before requesting another reset link.', 429);
         }
 
-        if (! app()->isProduction()) {
-            $data['reset_token'] = Password::broker()->createToken($user);
-        }
+        // Create a single reset token, persist it, and email the reset link with that
+        // same token. Creating a second token after sending would overwrite the stored
+        // token, leaving the emailed link pointing at a token that no longer matches.
+        $token = Password::broker()->createToken($user);
+        $user->sendPasswordResetNotification($token);
+
+        $data['reset_token'] = $token;
 
         return ApiResponse::success($data, 'If the account exists, a reset link has been sent.');
     }
