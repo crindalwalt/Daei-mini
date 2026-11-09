@@ -22,12 +22,34 @@ import { Alert } from '../components/ui/Alert'
 import { Spinner } from '../components/ui/Spinner'
 
 export function DashboardPage() {
-  const { user } = useAuth()
+  const { user, resendVerificationEmail } = useAuth()
   const [queueMessage, setQueueMessage] = useState<string | null>(null)
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null)
+  const [verificationError, setVerificationError] = useState<string | null>(null)
+  const [isResendingVerification, setIsResendingVerification] = useState(false)
   const [adminCheckResult, setAdminCheckResult] = useState<{
     success: boolean
     message: string
   } | null>(null)
+
+  const handleResendVerification = async () => {
+    setVerificationMessage(null)
+    setVerificationError(null)
+    setIsResendingVerification(true)
+
+    try {
+      await resendVerificationEmail()
+      setVerificationMessage('Verification email sent. Please check your inbox.')
+    } catch (err) {
+      setVerificationError(
+        err instanceof ApiError
+          ? err.message
+          : 'Unable to send the verification email. Please try again later.'
+      )
+    } finally {
+      setIsResendingVerification(false)
+    }
+  }
 
   // System Health Query
   const {
@@ -96,6 +118,36 @@ export function DashboardPage() {
       <Navbar />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8 space-y-8">
+        {user && user.email_verified === false && (
+          <Alert variant="warning" title="Verify your email address">
+            <div className="space-y-3">
+              <p>
+                We've sent a verification link to{' '}
+                <span className="font-semibold">{user.email}</span>. Please check your
+                inbox and click the link to verify your account.
+              </p>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleResendVerification}
+                isLoading={isResendingVerification}
+              >
+                Resend verification email
+              </Button>
+
+              {verificationMessage && (
+                <p className="text-xs font-medium text-emerald-700">{verificationMessage}</p>
+              )}
+
+              {verificationError && (
+                <p className="text-xs font-medium text-red-700">{verificationError}</p>
+              )}
+            </div>
+          </Alert>
+        )}
+
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-6 md:p-8 text-white shadow-md">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

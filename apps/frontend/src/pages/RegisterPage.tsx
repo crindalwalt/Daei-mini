@@ -87,7 +87,7 @@ export function RegisterPage() {
           <CardHeader>
             <CardTitle>Sign Up</CardTitle>
             <CardDescription>
-              Enter your details to create a new user profile
+              Enter your details to create a new user profile. We'll email you a verification link.
             </CardDescription>
           </CardHeader>
 

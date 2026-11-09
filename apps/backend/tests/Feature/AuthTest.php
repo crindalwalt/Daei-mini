@@ -4,9 +4,13 @@ namespace Tests\Feature;
 
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Notifications\ResetPasswordOtpNotification;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -57,6 +61,76 @@ class AuthTest extends TestCase
         $response->assertStatus(422)
             ->assertJson(['success' => false])
             ->assertJsonValidationErrors(['name', 'email', 'password']);
+    }
+
+    public function test_registration_sends_an_email_verification_notification(): void
+    {
+        Notification::fake();
+
+        $this->postJson('/api/v1/auth/register', [
+            'name' => 'Unverified User',
+            'email' => 'unverified@thinkcode.dev',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+        ])->assertStatus(201);
+
+        $user = User::query()->where('email', 'unverified@thinkcode.dev')->firstOrFail();
+
+        $this->assertNull($user->email_verified_at);
+        Notification::assertSentTo($user, VerifyEmail::class);
+    }
+
+    public function test_user_can_verify_email_with_a_signed_link(): void
+    {
+        $user = User::factory()->unverified()->create([
+            'email' => 'verify@thinkcode.dev',
+        ]);
+
+        $url = URL::temporarySignedRoute('verification.verify', now()->addMinutes(60), [
+            'id' => $user->id,
+            'hash' => sha1($user->getEmailForVerification()),
+        ]);
+
+        $this->get($url)->assertRedirect(
+            rtrim((string) config('app.frontend_url'), '/').'/login?verified=1',
+        );
+
+        $this->assertNotNull($user->refresh()->email_verified_at);
+    }
+
+    public function test_email_verification_rejects_an_invalid_signature(): void
+    {
+        $user = User::factory()->unverified()->create([
+            'email' => 'invalid-verify@thinkcode.dev',
+        ]);
+
+        $url = route('verification.verify', [
+            'id' => $user->id,
+            'hash' => sha1($user->getEmailForVerification()),
+        ]);
+
+        $this->get($url)->assertRedirect(
+            rtrim((string) config('app.frontend_url'), '/').'/login?verified=0',
+        );
+
+        $this->assertNull($user->refresh()->email_verified_at);
+    }
+
+    public function test_unverified_user_can_request_another_verification_email(): void
+    {
+        Notification::fake();
+
+        $user = User::factory()->unverified()->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/auth/email/verification-notification')
+            ->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'message' => 'Verification email sent.',
+            ]);
+
+        Notification::assertSentTo($user, VerifyEmail::class);
     }
 
     public function test_seeded_admin_can_login_and_receives_admin_token(): void
@@ -374,7 +448,7 @@ class AuthTest extends TestCase
         $response->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'message' => 'If the account exists, a reset link has been sent.',
+                'message' => 'If the account exists, a one-time code has been sent.',
                 'data' => ['email' => 'nobody@thinkcode.dev'],
             ])
             ->assertJsonMissingPath('data.reset_token');
@@ -384,7 +458,31 @@ class AuthTest extends TestCase
         ]);
     }
 
-    public function test_user_can_reset_password_with_issued_token(): void
+    public function test_forgot_password_emails_a_six_digit_one_time_code(): void
+    {
+        Notification::fake();
+
+        $user = User::factory()->create([
+            'email' => 'otp@thinkcode.dev',
+        ]);
+
+        $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => 'otp@thinkcode.dev',
+        ])->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        Notification::assertSentTo(
+            $user,
+            ResetPasswordOtpNotification::class,
+            function (ResetPasswordOtpNotification $notification): bool {
+                $this->assertMatchesRegularExpression('/^\d{6}$/', $notification->code);
+
+                return true;
+            },
+        );
+    }
+
+    public function test_user_can_reset_password_with_issued_one_time_code(): void
     {
         $user = User::factory()->create([
             'email' => 'reset@thinkcode.dev',
@@ -400,9 +498,10 @@ class AuthTest extends TestCase
             'email' => 'reset@thinkcode.dev',
         ])->assertStatus(200)
             ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'If the account exists, a one-time code has been sent.')
             ->json('data.reset_token');
 
-        $this->assertNotEmpty($token);
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $token);
 
         $this->assertDatabaseHas('password_reset_tokens', [
             'email' => 'reset@thinkcode.dev',

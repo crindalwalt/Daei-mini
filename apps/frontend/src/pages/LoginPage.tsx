@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -21,6 +21,8 @@ type LoginFormValues = z.infer<typeof loginSchema>
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const verificationStatus = searchParams.get('verified')
   const [serverError, setServerError] = useState<string | null>(null)
 
   const {
@@ -80,6 +82,18 @@ export function LoginPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
+            {verificationStatus === '1' && (
+              <Alert variant="success">
+                Your email address has been verified. You can sign in now.
+              </Alert>
+            )}
+
+            {verificationStatus === '0' && (
+              <Alert variant="destructive">
+                This verification link is invalid or has expired. Please request a new one.
+              </Alert>
+            )}
+
             {serverError && (
               <Alert variant="destructive">{serverError}</Alert>
             )}

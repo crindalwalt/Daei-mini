@@ -18,6 +18,7 @@ describe('LoginPage', () => {
       logout: vi.fn(),
       forgotPassword: vi.fn(),
       resetPassword: vi.fn(),
+      resendVerificationEmail: vi.fn(),
     })
 
     render(
@@ -45,6 +46,7 @@ describe('LoginPage', () => {
       logout: vi.fn(),
       forgotPassword: vi.fn(),
       resetPassword: vi.fn(),
+      resendVerificationEmail: vi.fn(),
     })
 
     render(
@@ -67,6 +69,7 @@ describe('LoginPage', () => {
       logout: vi.fn(),
       forgotPassword: vi.fn(),
       resetPassword: vi.fn(),
+      resendVerificationEmail: vi.fn(),
     })
 
     render(
@@ -99,6 +102,7 @@ describe('LoginPage', () => {
       logout: vi.fn(),
       forgotPassword: vi.fn(),
       resetPassword: vi.fn(),
+      resendVerificationEmail: vi.fn(),
     })
 
     render(

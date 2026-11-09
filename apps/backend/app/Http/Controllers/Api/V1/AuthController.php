@@ -14,11 +14,14 @@ use App\Http\Resources\UserResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\User;
 use App\Models\UserPrayerPreference;
+use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -93,6 +96,16 @@ class AuthController extends Controller
             return $user;
         });
 
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $exception) {
+            // Never fail registration because the verification email could not be sent.
+            Log::error('Unable to send the email verification notification.', [
+                'user_id' => $user->id,
+                'exception' => $exception,
+            ]);
+        }
+
         Auth::login($user);
 
         if ($request->hasSession()) {
@@ -104,6 +117,48 @@ class AuthController extends Controller
         return ApiResponse::success([
             'user' => new UserResource($user),
         ], 'Registration successful.', 201);
+    }
+
+    /**
+     * Verify the user's email address from a signed verification link.
+     */
+    public function verifyEmail(Request $request, string $id, string $hash): RedirectResponse
+    {
+        if (! $request->hasValidSignature()) {
+            return redirect()->away($this->frontendUrl('/login?verified=0'));
+        }
+
+        $user = User::query()->find($id);
+
+        if ($user === null
+            || ! hash_equals((string) $user->getKey(), $id)
+            || ! hash_equals(sha1($user->getEmailForVerification()), $hash)) {
+            return redirect()->away($this->frontendUrl('/login?verified=0'));
+        }
+
+        if (! $user->hasVerifiedEmail()) {
+            $user->markEmailAsVerified();
+
+            event(new Verified($user));
+        }
+
+        return redirect()->away($this->frontendUrl('/login?verified=1'));
+    }
+
+    /**
+     * Resend the email verification notification.
+     */
+    public function resendEmailVerification(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->hasVerifiedEmail()) {
+            return ApiResponse::success(null, 'Email address is already verified.');
+        }
+
+        $user->sendEmailVerificationNotification();
+
+        return ApiResponse::success(null, 'Verification email sent.');
     }
 
     /**
@@ -156,36 +211,46 @@ class AuthController extends Controller
     }
 
     /**
-     * Dispatch a password reset link for the supplied email address.
+     * Send a one-time password reset code for the supplied email address.
      */
     public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
     {
         $email = $request->string('email')->toString();
         $user = User::query()->where('email', $email)->first();
         $data = ['email' => $email];
+        $message = 'If the account exists, a one-time code has been sent.';
 
         if ($user === null) {
             // Never disclose whether an account exists.
-            return ApiResponse::success($data, 'If the account exists, a reset link has been sent.');
+            return ApiResponse::success($data, $message);
         }
 
         if (Password::broker()->getRepository()->recentlyCreatedToken($user)) {
-            return ApiResponse::error('Please wait before requesting another reset link.', 429);
+            return ApiResponse::error('Please wait before requesting another code.', 429);
         }
 
-        // Create a single reset token, persist it, and email the reset link with that
-        // same token. Creating a second token after sending would overwrite the stored
-        // token, leaving the emailed link pointing at a token that no longer matches.
-        $token = Password::broker()->createToken($user);
-        $user->sendPasswordResetNotification($token);
+        // Store a hashed six-digit code in the password reset repository so the
+        // existing broker can validate it when the user resets their password.
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $table = (string) config('auth.passwords.users.table', 'password_reset_tokens');
 
-        $data['reset_token'] = $token;
+        DB::table($table)->updateOrInsert(
+            ['email' => $email],
+            ['token' => Hash::make($code), 'created_at' => now()],
+        );
 
-        return ApiResponse::success($data, 'If the account exists, a reset link has been sent.');
+        $user->sendPasswordResetNotification($code);
+
+        // Keep the code available to local tooling/tests, but never expose it in production.
+        if (! app()->isProduction()) {
+            $data['reset_token'] = $code;
+        }
+
+        return ApiResponse::success($data, $message);
     }
 
     /**
-     * Reset the user's password using a broker-issued token.
+     * Reset the user's password using an emailed one-time code.
      */
     public function resetPassword(ResetPasswordRequest $request): JsonResponse
     {
@@ -232,6 +297,16 @@ class AuthController extends Controller
         }
 
         return ApiResponse::success(null, 'Logged out successfully.');
+    }
+
+    /**
+     * Build an absolute URL for the configured SPA.
+     */
+    private function frontendUrl(string $path): string
+    {
+        $baseUrl = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+
+        return $baseUrl.$path;
     }
 
     /**

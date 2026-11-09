@@ -50,12 +50,15 @@ export function ForgotPasswordPage() {
       if (err instanceof ApiError) {
         setServerError(err.message)
       } else {
-        setServerError('An unexpected error occurred while requesting the reset link.')
+        setServerError('An unexpected error occurred while requesting the one-time code.')
       }
     }
   }
 
   const isSent = submitted && !serverError && submittedEmail !== null
+  const resetPath = `/reset-password?email=${encodeURIComponent(submittedEmail ?? '')}${
+    resetToken ? `&token=${encodeURIComponent(resetToken)}` : ''
+  }`
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -68,15 +71,15 @@ export function ForgotPasswordPage() {
             Forgot Password
           </h1>
           <p className="text-sm text-slate-500">
-            Enter your email address and we'll send you a reset link
+            Enter your email address and we'll send you a one-time code
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Reset your password</CardTitle>
+            <CardTitle>Send a one-time code</CardTitle>
             <CardDescription>
-              We'll email you a secure link to reset your password
+              We'll email you a 6-digit code to reset your password
             </CardDescription>
           </CardHeader>
 
@@ -89,26 +92,27 @@ export function ForgotPasswordPage() {
               <div className="space-y-4 text-sm text-slate-600">
                 <Alert variant="success">
                   If an account exists for <span className="font-semibold">{submittedEmail}</span>,
-                  a password reset link has been sent to your email.
+                  a one-time code has been sent to your email.
                 </Alert>
 
                 {resetToken && import.meta.env.MODE !== 'production' && (
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-2">
-                    <p className="font-semibold text-slate-900">Development reset token</p>
+                    <p className="font-semibold text-slate-900">Development OTP code</p>
                     <p className="text-xs text-slate-500">
-                      In production the reset link is delivered by email. In development you can use the token below:
+                      In production the code is delivered by email. In development you can use the code below:
                     </p>
-                    <code className="block rounded bg-slate-900 px-3 py-2 text-xs text-slate-100 break-all">
+                    <code className="block rounded bg-slate-900 px-3 py-2 text-center text-lg font-semibold tracking-[0.35em] text-slate-100">
                       {resetToken}
                     </code>
-                    <Link
-                      to={`/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(submittedEmail ?? '')}`}
-                      className="inline-block font-semibold text-blue-600 hover:underline"
-                    >
-                      Continue to password reset
-                    </Link>
                   </div>
                 )}
+
+                <Link
+                  to={resetPath}
+                  className="inline-block font-semibold text-blue-600 hover:underline"
+                >
+                  Enter the one-time code
+                </Link>
               </div>
             ) : (
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -127,7 +131,7 @@ export function ForgotPasswordPage() {
                   isLoading={isSubmitting}
                 >
                   <MailCheck className="w-4 h-4 mr-2" />
-                  Send Reset Link
+                  Send OTP Code
                 </Button>
               </form>
             )}

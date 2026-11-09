@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 
 const resetPasswordSchema = z
   .object({
-    token: z.string().min(1, 'Reset token is required'),
+    token: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code from your email'),
     email: z.string().min(1, 'Email is required').email('Must be a valid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     password_confirmation: z.string().min(1, 'Password confirmation is required'),
@@ -127,7 +127,7 @@ export function ResetPasswordPage() {
             Reset Password
           </h1>
           <p className="text-sm text-slate-500">
-            Choose a new password for your account
+            Enter the one-time code we emailed you and choose a new password
           </p>
         </div>
 
@@ -135,7 +135,7 @@ export function ResetPasswordPage() {
           <CardHeader>
             <CardTitle>Set a new password</CardTitle>
             <CardDescription>
-              Enter a new password for your account
+              Enter the 6-digit code from your email, then choose a new password
             </CardDescription>
           </CardHeader>
 
@@ -146,10 +146,12 @@ export function ResetPasswordPage() {
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <Input
-                label="Reset token"
+                label="One-time code (OTP)"
                 type="text"
-                placeholder="Reset token from your email"
-                autoComplete="off"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6-digit code from your email"
+                autoComplete="one-time-code"
                 error={errors.token?.message}
                 {...register('token')}
               />

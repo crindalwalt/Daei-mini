@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use App\Notifications\ResetPasswordOtpNotification;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,7 +15,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
@@ -59,6 +61,14 @@ class User extends Authenticatable
                 $user->uuid = (string) Str::uuid();
             }
         });
+    }
+
+    /**
+     * Send the one-time password reset code to the user.
+     */
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        $this->notify(new ResetPasswordOtpNotification((string) $token));
     }
 
     public function groups(): BelongsToMany

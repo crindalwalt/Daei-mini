@@ -45,7 +45,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
         Route::post('/register', [AuthController::class, 'register']);
         Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:login');
-        Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+        Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:login');
+        Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])->name('verification.verify');
     });
 
     // ── Personal Access Token Issuance Contract ───────────────────────────
@@ -57,6 +58,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/me', [AuthController::class, 'me']);
             Route::patch('/profile', [AuthController::class, 'updateProfile']);
             Route::post('/logout', [AuthController::class, 'logout']);
+            Route::post('/email/verification-notification', [AuthController::class, 'resendEmailVerification'])
+                ->middleware('throttle:6,1');
         });
 
         // Personal Access Token Management

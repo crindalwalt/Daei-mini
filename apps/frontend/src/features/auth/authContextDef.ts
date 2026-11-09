@@ -10,6 +10,7 @@ export interface AuthContextType {
   logout: () => Promise<void>
   forgotPassword: (data: ForgotPasswordData) => Promise<ForgotPasswordResponse>
   resetPassword: (data: ResetPasswordData) => Promise<{ message: string }>
+  resendVerificationEmail: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined)
