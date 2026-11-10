@@ -3,13 +3,13 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Layers, UserPlus } from 'lucide-react'
+import { Eye, EyeOff, UserPlus } from 'lucide-react'
 import { useAuth } from '../features/auth/useAuth'
 import { ApiError } from '../lib/api/client'
+import { AuthLayout } from '../components/layout/AuthLayout'
 import { Input } from '../components/ui/Input'
 import { Button } from '../components/ui/Button'
 import { Alert } from '../components/ui/Alert'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/Card'
 
 const registerSchema = z
   .object({
@@ -17,6 +17,9 @@ const registerSchema = z
     email: z.string().min(1, 'Email is required').email('Must be a valid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     password_confirmation: z.string().min(1, 'Password confirmation is required'),
+    accept_terms: z.boolean().refine((value) => value, {
+      message: 'Please accept the community guidelines',
+    }),
   })
   .refine((data) => data.password === data.password_confirmation, {
     message: 'Passwords do not match',
@@ -29,6 +32,7 @@ export function RegisterPage() {
   const { register: registerUser } = useAuth()
   const navigate = useNavigate()
   const [serverError, setServerError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const {
     register,
@@ -42,14 +46,20 @@ export function RegisterPage() {
       email: '',
       password: '',
       password_confirmation: '',
+      accept_terms: false,
     },
   })
 
   const onSubmit = async (values: RegisterFormValues) => {
     setServerError(null)
     try {
-      await registerUser(values)
-      navigate('/')
+      const response = await registerUser({
+        name: values.name,
+        email: values.email,
+        password: values.password,
+        password_confirmation: values.password_confirmation,
+      })
+      navigate(response.user.role === 'admin' ? '/admin' : '/app')
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.errors) {
@@ -63,94 +73,99 @@ export function RegisterPage() {
           setServerError(err.message)
         }
       } else {
-        setServerError('An unexpected error occurred during registration.')
+        setServerError('An unexpected error occurred while creating your account.')
       }
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center space-y-2">
-          <div className="inline-flex w-12 h-12 rounded-xl bg-blue-600 text-white items-center justify-center shadow-md">
-            <Layers className="w-6 h-6" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Create Account
-          </h1>
-          <p className="text-sm text-slate-500">
-            Join the ThinkCode developer workspace
-          </p>
+    <AuthLayout
+      title="Create your account"
+      subtitle="Start with a simple daily plan and build from there."
+      badge="Free to get started"
+      footer={
+        <>
+          Already have an account?{' '}
+          <Link to="/login" className="font-semibold text-brand-700 hover:underline">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      {serverError && (
+        <div className="mb-4">
+          <Alert variant="destructive">{serverError}</Alert>
         </div>
+      )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign Up</CardTitle>
-            <CardDescription>
-              Enter your details to create a new user profile. We'll email you a verification link.
-            </CardDescription>
-          </CardHeader>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <Input
+          label="Full name"
+          type="text"
+          placeholder="Aisha Rahman"
+          autoComplete="name"
+          error={errors.name?.message}
+          {...register('name')}
+        />
 
-          <CardContent className="space-y-4">
-            {serverError && (
-              <Alert variant="destructive">{serverError}</Alert>
-            )}
+        <Input
+          label="Email address"
+          type="email"
+          placeholder="you@example.com"
+          autoComplete="email"
+          error={errors.email?.message}
+          {...register('email')}
+        />
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <Input
-                label="Full Name"
-                placeholder="Ada Lovelace"
-                autoComplete="name"
-                error={errors.name?.message}
-                {...register('name')}
-              />
+        <Input
+          label="Password"
+          type={showPassword ? 'text' : 'password'}
+          placeholder="At least 8 characters"
+          autoComplete="new-password"
+          error={errors.password?.message}
+          helperText="Use 8 or more characters with a mix of letters and numbers."
+          rightSlot={
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          }
+          {...register('password')}
+        />
 
-              <Input
-                label="Email address"
-                type="email"
-                placeholder="developer@thinkcode.dev"
-                autoComplete="email"
-                error={errors.email?.message}
-                {...register('email')}
-              />
+        <Input
+          label="Confirm password"
+          type={showPassword ? 'text' : 'password'}
+          placeholder="Re-enter your password"
+          autoComplete="new-password"
+          error={errors.password_confirmation?.message}
+          {...register('password_confirmation')}
+        />
 
-              <Input
-                label="Password"
-                type="password"
-                placeholder="At least 8 characters"
-                autoComplete="new-password"
-                error={errors.password?.message}
-                {...register('password')}
-              />
+        <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+            {...register('accept_terms')}
+          />
+          <span>
+            I agree to the community guidelines and understand that my daily reports are visible to
+            my group administrators.
+          </span>
+        </label>
+        {errors.accept_terms && (
+          <p className="text-xs font-medium text-red-600">{errors.accept_terms.message}</p>
+        )}
 
-              <Input
-                label="Confirm Password"
-                type="password"
-                placeholder="Re-enter password"
-                autoComplete="new-password"
-                error={errors.password_confirmation?.message}
-                {...register('password_confirmation')}
-              />
-
-              <Button
-                type="submit"
-                className="w-full"
-                isLoading={isSubmitting}
-              >
-                <UserPlus className="w-4 h-4 mr-2" />
-                Register
-              </Button>
-            </form>
-          </CardContent>
-
-          <CardFooter className="justify-center border-t border-slate-100 pt-4 text-xs text-slate-500">
-            <span>Already have an account? </span>
-            <Link to="/login" className="ml-1 font-semibold text-blue-600 hover:underline">
-              Sign in
-            </Link>
-          </CardFooter>
-        </Card>
-      </div>
-    </div>
+        <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
+          <UserPlus className="h-4 w-4" />
+          Create Account
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }

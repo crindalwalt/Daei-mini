@@ -1,21 +1,31 @@
 import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../../lib/api/client'
-import type { AuthResponse, ForgotPasswordData, ForgotPasswordResponse, LoginCredentials, RegisterData, ResetPasswordData, User } from '../../types/auth'
+import type { ApiEnvelope } from '../../types/api'
+import type {
+  AuthPayload,
+  AuthResponse,
+  ForgotPasswordData,
+  ForgotPasswordResponse,
+  LoginCredentials,
+  RegisterData,
+  ResetPasswordData,
+  User,
+} from '../../types/auth'
 import { AuthContext } from './authContextDef'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient()
 
   // Retrieve authenticated user
-  const { data, isLoading } = useQuery<{ user: User }>({
+  const { data, isLoading } = useQuery<ApiEnvelope<{ user: User }>>({
     queryKey: ['auth', 'me'],
-    queryFn: () => apiClient.get<{ user: User }>('/api/v1/auth/me'),
+    queryFn: () => apiClient.get<ApiEnvelope<{ user: User }>>('/api/v1/auth/me'),
     retry: false,
     staleTime: 5 * 60 * 1000,
   })
 
-  const user = data?.user || null
+  const user = data?.data?.user ?? null
 
   // Listen for unauthenticated API responses
   React.useEffect(() => {
@@ -27,18 +37,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Login mutation
   const loginMutation = useMutation({
     mutationFn: (credentials: LoginCredentials) =>
-      apiClient.post<AuthResponse>('/api/v1/auth/login', credentials),
+      apiClient.post<ApiEnvelope<AuthPayload>>('/api/v1/auth/login', credentials),
     onSuccess: (response) => {
-      queryClient.setQueryData(['auth', 'me'], { user: response.user })
+      apiClient.setToken(response.data?.token ?? null)
+      if (response.data?.user) {
+        queryClient.setQueryData(['auth', 'me'], {
+          success: true,
+          data: { user: response.data.user },
+          message: response.message,
+        })
+      }
     },
   })
 
   // Register mutation
   const registerMutation = useMutation({
     mutationFn: (regData: RegisterData) =>
-      apiClient.post<AuthResponse>('/api/v1/auth/register', regData),
+      apiClient.post<ApiEnvelope<AuthPayload>>('/api/v1/auth/register', regData),
     onSuccess: (response) => {
-      queryClient.setQueryData(['auth', 'me'], { user: response.user })
+      if (response.data?.token) apiClient.setToken(response.data.token)
+      if (response.data?.user) {
+        queryClient.setQueryData(['auth', 'me'], {
+          success: true,
+          data: { user: response.data.user },
+          message: response.message,
+        })
+      }
     },
   })
 
@@ -46,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutMutation = useMutation({
     mutationFn: () => apiClient.post('/api/v1/auth/logout'),
     onSettled: () => {
+      apiClient.setToken(null)
       queryClient.setQueryData(['auth', 'me'], null)
       queryClient.clear()
     },
@@ -53,47 +78,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Forgot password mutation
   const forgotPasswordMutation = useMutation({
-    mutationFn: (data: ForgotPasswordData) =>
-      apiClient.post<{
-        data: { email: string; reset_token?: string } | null
-        message: string
-      }>('/api/v1/auth/forgot-password', data),
+    mutationFn: (payload: ForgotPasswordData) =>
+      apiClient.post<ApiEnvelope<{ email: string; reset_token?: string } | null>>(
+        '/api/v1/auth/forgot-password',
+        payload
+      ),
   })
 
   // Reset password mutation
   const resetPasswordMutation = useMutation({
-    mutationFn: (data: ResetPasswordData) =>
-      apiClient.post<{ message: string }>('/api/v1/auth/reset-password', data),
+    mutationFn: (payload: ResetPasswordData) =>
+      apiClient.post<ApiEnvelope<null>>('/api/v1/auth/reset-password', payload),
   })
 
   // Resend email verification mutation
   const resendVerificationMutation = useMutation({
     mutationFn: () =>
-      apiClient.post<{ message: string }>('/api/v1/auth/email/verification-notification'),
+      apiClient.post<ApiEnvelope<null>>('/api/v1/auth/email/verification-notification'),
   })
 
   const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    return loginMutation.mutateAsync(credentials)
+    const response = await loginMutation.mutateAsync(credentials)
+    return {
+      user: response.data.user,
+      message: response.message,
+      token: response.data.token,
+      token_type: response.data.token_type,
+      abilities: response.data.abilities,
+    }
   }
 
   const register = async (regData: RegisterData): Promise<AuthResponse> => {
-    return registerMutation.mutateAsync(regData)
+    const response = await registerMutation.mutateAsync(regData)
+    return {
+      user: response.data.user,
+      message: response.message,
+      token: response.data.token,
+      token_type: response.data.token_type,
+      abilities: response.data.abilities,
+    }
   }
 
   const logout = async (): Promise<void> => {
     await logoutMutation.mutateAsync()
   }
 
-  const forgotPassword = async (data: ForgotPasswordData): Promise<ForgotPasswordResponse> => {
-    const response = await forgotPasswordMutation.mutateAsync(data)
+  const forgotPassword = async (
+    payload: ForgotPasswordData
+  ): Promise<ForgotPasswordResponse> => {
+    const response = await forgotPasswordMutation.mutateAsync(payload)
     return {
       message: response.message,
       reset_token: response.data?.reset_token,
     }
   }
 
-  const resetPassword = async (data: ResetPasswordData): Promise<{ message: string }> => {
-    return resetPasswordMutation.mutateAsync(data)
+  const resetPassword = async (payload: ResetPasswordData): Promise<{ message: string }> => {
+    const response = await resetPasswordMutation.mutateAsync(payload)
+    return { message: response.message }
   }
 
   const resendVerificationEmail = async (): Promise<void> => {
@@ -118,4 +160,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   )
 }
-

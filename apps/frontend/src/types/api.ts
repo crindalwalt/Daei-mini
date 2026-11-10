@@ -1,3 +1,20 @@
+export interface PaginationMeta {
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
+  from?: number | null
+  to?: number | null
+}
+
+export interface ApiEnvelope<T> {
+  success: boolean
+  data: T
+  message: string
+  errors?: Record<string, string[]>
+  meta?: PaginationMeta
+}
+
 export interface HealthStatus {
   status: 'healthy' | 'degraded'
   timestamp: string
@@ -26,4 +43,3 @@ export interface DemoTask {
   status: 'completed' | 'in_progress' | 'pending'
   assigned_to: string
 }
-

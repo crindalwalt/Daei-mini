@@ -17,6 +17,8 @@ export class ApiError extends Error {
   }
 }
 
+const TOKEN_KEY = 'daei.auth.token'
+
 class ApiClient {
   private baseUrl: string
   private csrfInitialized = false
@@ -31,6 +33,25 @@ class ApiClient {
    */
   public onUnauthorized(callback: () => void): void {
     this.onUnauthorizedCallback = callback
+  }
+
+  public getToken(): string | null {
+    if (typeof window === 'undefined') return null
+    try {
+      return window.localStorage.getItem(TOKEN_KEY)
+    } catch {
+      return null
+    }
+  }
+
+  public setToken(token?: string | null): void {
+    if (typeof window === 'undefined') return
+    try {
+      if (token) window.localStorage.setItem(TOKEN_KEY, token)
+      else window.localStorage.removeItem(TOKEN_KEY)
+    } catch {
+      // Storage can be unavailable in private browsing — ignore.
+    }
   }
 
   /**
@@ -70,20 +91,22 @@ class ApiClient {
     options: RequestInit = {},
     isRetry = false
   ): Promise<T> {
-    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(
-      (options.method || 'GET').toUpperCase()
-    )
+    const method = (options.method || 'GET').toUpperCase()
+    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
 
     if (isMutation) {
       await this.ensureCsrfToken()
     }
 
     const xsrfToken = this.getCookie('XSRF-TOKEN')
+    const bearer = this.getToken()
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
+      ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
       ...(options.headers as Record<string, string>),
     }
 
@@ -128,16 +151,12 @@ class ApiClient {
         // Fallback for non-JSON responses
       }
 
-      if (response.status === 401 && this.onUnauthorizedCallback) {
-        this.onUnauthorizedCallback()
+      if (response.status === 401) {
+        this.setToken(null)
+        this.onUnauthorizedCallback?.()
       }
 
-      throw new ApiError(
-        response.status,
-        message,
-        errorData?.errors,
-        errorData
-      )
+      throw new ApiError(response.status, message, errorData?.errors, errorData)
     }
 
     if (response.status === 204) {
@@ -155,7 +174,7 @@ class ApiClient {
     return this.request<T>(endpoint, {
       ...options,
       method: 'POST',
-      body: data !== undefined ? JSON.stringify(data) : undefined,
+      body: data instanceof FormData ? data : data !== undefined ? JSON.stringify(data) : undefined,
     })
   }
 
@@ -163,7 +182,15 @@ class ApiClient {
     return this.request<T>(endpoint, {
       ...options,
       method: 'PUT',
-      body: data !== undefined ? JSON.stringify(data) : undefined,
+      body: data instanceof FormData ? data : data !== undefined ? JSON.stringify(data) : undefined,
+    })
+  }
+
+  public patch<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T> {
+    return this.request<T>(endpoint, {
+      ...options,
+      method: 'PATCH',
+      body: data instanceof FormData ? data : data !== undefined ? JSON.stringify(data) : undefined,
     })
   }
 

@@ -14,6 +14,7 @@ REST API for the ThinkCode full-stack template. All endpoints are prefixed with 
 > Every example below uses `http://localhost:8082`. Replace `8082` with `8000` when calling
 > `php artisan serve` directly.
 
+
 ## Conventions
 
 - Requests/responses use `Content-Type: application/json` and `Accept: application/json`.

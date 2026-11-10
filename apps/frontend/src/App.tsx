@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router-dom'
 import { AuthProvider } from './features/auth/AuthContext'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
+import { ToastProvider } from './components/ui/toast/ToastProvider'
 import { router } from './app/router'
 
 const queryClient = new QueryClient({
@@ -19,7 +20,9 @@ export function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <RouterProvider router={router} />
+          <ToastProvider>
+            <RouterProvider router={router} />
+          </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>
