@@ -1,13 +1,17 @@
-import { NavLink } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, HelpCircle, LogOut, ShieldCheck, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useAuth } from '../../features/auth/useAuth'
+import { useToast } from '../ui/toast/ToastProvider'
 import { adminNav, userNav, type NavSection } from './navConfig'
 import { Logo } from './Logo'
 import { Avatar } from '../ui/Avatar'
+import { MosqueIllustration } from '../shared/MosqueIllustration'
 
 interface SidebarProps {
   variant: 'admin' | 'user'
+  dashboard?: boolean
   collapsed: boolean
   mobileOpen: boolean
   onToggleCollapse: () => void
@@ -16,13 +20,31 @@ interface SidebarProps {
 
 export function Sidebar({
   variant,
+  dashboard = false,
   collapsed,
   mobileOpen,
   onToggleCollapse,
   onCloseMobile,
 }: SidebarProps) {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const toast = useToast()
+  const [loggingOut, setLoggingOut] = useState(false)
   const sections: NavSection[] = variant === 'admin' ? adminNav : userNav
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    try {
+      await logout()
+      toast.success('You have been signed out.')
+    } catch {
+      toast.error('Could not reach the server, but you have been signed out locally.')
+    } finally {
+      setLoggingOut(false)
+      onCloseMobile()
+      navigate('/login', { replace: true })
+    }
+  }
 
   return (
     <>
@@ -36,6 +58,7 @@ export function Sidebar({
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-slate-200/80 bg-white transition-all duration-300',
+          dashboard && 'admin-sidebar-dashboard',
           collapsed ? 'lg:w-[84px]' : 'lg:w-[270px]',
           'w-[270px]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
@@ -108,7 +131,14 @@ export function Sidebar({
           ))}
         </nav>
 
-        {!collapsed && (
+        {!collapsed && dashboard && (
+          <div className="dash-side-art">
+            <div className="dash-side-art__pattern" aria-hidden="true" />
+            <MosqueIllustration className="dash-side-art__mosque" />
+          </div>
+        )}
+
+        {!collapsed && !dashboard && (
           <div className="mx-3 mb-3 rounded-2xl bg-gradient-to-br from-brand-600 to-brand-800 p-4 text-white">
             <div className="mb-2 flex items-center gap-2">
               <HelpCircle className="h-4 w-4 text-brand-200" />
@@ -150,8 +180,20 @@ export function Sidebar({
                 </p>
               </div>
             )}
-            {!collapsed && <LogOut className="h-4 w-4 text-slate-300" aria-hidden="true" />}
           </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className={cn(
+              'mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60',
+              collapsed && 'lg:justify-center lg:px-0'
+            )}
+            aria-label="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+            {!collapsed && <span>{loggingOut ? 'Signing out…' : 'Sign out'}</span>}
+          </button>
           <button
             type="button"
             onClick={onToggleCollapse}

@@ -21,6 +21,7 @@ class StoreLibraryResourceRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
+            'category' => ['nullable', 'string', 'max:60'],
             'file' => ['required', 'file', 'max:51200'],
             'visibility' => ['sometimes', Rule::enum(LibraryVisibility::class)],
             'status' => ['sometimes', 'string', 'in:active,archived'],

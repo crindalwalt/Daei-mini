@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -29,19 +30,34 @@ import { Badge } from '../../components/ui/Badge'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../components/ui/toast/ToastProvider'
 import { useAuth } from '../../features/auth/useAuth'
-import { libraryResources } from '../../lib/mockData'
 import { formatDate } from '../../lib/format'
 import { libraryApi } from '../../lib/api/endpoints'
+import type { LibraryItem } from '../../lib/api/endpoints'
 import { ApiError } from '../../lib/api/client'
 import type { LibraryResource } from '../../types/domain'
 import { cn } from '../../lib/utils'
 
-function detectFileType(file: File): LibraryResource['file_type'] {
-  const name = file.name.toLowerCase()
-  if (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg)$/.test(name)) return 'audio'
-  if (file.type.startsWith('video/') || /\.(mp4|mov|webm)$/.test(name)) return 'video'
-  if (file.type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
+function fileTypeFromItem(item: LibraryItem): LibraryResource['file_type'] {
+  const name = item.file_name.toLowerCase()
+  const mime = item.mime_type ?? ''
+  if (mime.startsWith('audio/') || /\.(mp3|wav|m4a|ogg)$/.test(name)) return 'audio'
+  if (mime.startsWith('video/') || /\.(mp4|mov|webm)$/.test(name)) return 'video'
+  if (mime === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
   return 'doc'
+}
+
+function toLibraryResource(item: LibraryItem): LibraryResource {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description ?? null,
+    category: item.category ?? 'General',
+    file_type: fileTypeFromItem(item),
+    visibility: item.visibility,
+    size: formatFileSize(item.file_size ?? 0),
+    bookmarked: item.is_bookmarked ?? false,
+    created_at: item.created_at ?? undefined,
+  }
 }
 
 function formatFileSize(bytes: number): string {
@@ -86,6 +102,7 @@ const categories = [
   'Fitness',
   'Planning',
   'Family',
+  'General',
 ]
 
 const fileTypes: { value: LibraryResource['file_type'] | 'all'; label: string }[] = [
@@ -99,16 +116,34 @@ const fileTypes: { value: LibraryResource['file_type'] | 'all'; label: string }[
 export function DigitalLibraryPage() {
   const { user } = useAuth()
   const toast = useToast()
+  const queryClient = useQueryClient()
   const isAdmin = user?.role === 'admin'
 
-  const [resources, setResources] = useState<LibraryResource[]>(libraryResources)
+  const resourcesQuery = useQuery({
+    queryKey: ['library', 'resources'],
+    queryFn: () => libraryApi.list({ per_page: 100 }),
+    staleTime: 30_000,
+  })
+
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [fileType, setFileType] = useState<LibraryResource['file_type'] | 'all'>('all')
   const [onlyBookmarked, setOnlyBookmarked] = useState(false)
+  const [bookmarks, setBookmarks] = useState<Record<number, boolean>>({})
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
+
+  const resources = useMemo(
+    () =>
+      (resourcesQuery.data?.items ?? []).map((item) => {
+        const resource = toLibraryResource(item)
+        const override = bookmarks[resource.id]
+        return override === undefined ? resource : { ...resource, bookmarked: override }
+      }),
+    [resourcesQuery.data, bookmarks]
+  )
 
   const {
     register,
@@ -144,11 +179,7 @@ export function DigitalLibraryPage() {
   const bookmarkCount = resources.filter((resource) => resource.bookmarked).length
 
   const toggleBookmark = (resource: LibraryResource) => {
-    setResources((current) =>
-      current.map((item) =>
-        item.id === resource.id ? { ...item, bookmarked: !item.bookmarked } : item
-      )
-    )
+    setBookmarks((current) => ({ ...current, [resource.id]: !resource.bookmarked }))
     toast.success(
       resource.bookmarked ? `“${resource.title}” removed from bookmarks.` : `“${resource.title}” bookmarked.`
     )
@@ -168,40 +199,38 @@ export function DigitalLibraryPage() {
     }
     setFileError(null)
 
-    const resource: LibraryResource = {
-      id: Date.now(),
-      title: values.title,
-      description: values.description ?? null,
-      category: values.category,
-      file_type: detectFileType(file),
-      visibility: values.visibility,
-      size: formatFileSize(file.size),
-      bookmarked: false,
-      created_at: new Date().toISOString(),
-    }
-
     try {
       await libraryApi.create({
         title: values.title,
         description: values.description,
+        category: values.category,
         visibility: values.visibility,
         file,
       })
+      await queryClient.invalidateQueries({ queryKey: ['library', 'resources'] })
       toast.success(`“${values.title}” has been added to the library.`, 'Resource uploaded')
+      closeUpload()
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message, 'Could not upload resource')
         return
       }
-      toast.info('Saved locally. The API is unreachable right now.', 'Offline mode')
+      toast.error('The library service is unavailable right now.', 'Could not upload resource')
     }
-
-    setResources((current) => [resource, ...current])
-    closeUpload()
   }
 
-  const onDownload = (resource: LibraryResource) => {
-    toast.info(`Preparing “${resource.title}” for download.`)
+  const onDownload = async (resource: LibraryResource) => {
+    setDownloadingId(resource.id)
+    try {
+      await libraryApi.download(resource.id, resource.title)
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'The file could not be downloaded.',
+        'Download failed'
+      )
+    } finally {
+      setDownloadingId(null)
+    }
   }
 
   return (
@@ -317,12 +346,31 @@ export function DigitalLibraryPage() {
             </div>
           </div>
 
-          <p className="inline-flex items-center gap-1 text-xs text-slate-400">
-            <Filter className="h-3.5 w-3.5" />
-            {filtered.length} of {resources.length} resources
-          </p>
+          {resourcesQuery.isSuccess && (
+            <p className="inline-flex items-center gap-1 text-xs text-slate-400">
+              <Filter className="h-3.5 w-3.5" />
+              {filtered.length} of {resources.length} resources
+            </p>
+          )}
 
-          {filtered.length === 0 ? (
+          {resourcesQuery.isLoading ? (
+            <div className="py-12 text-center text-sm text-slate-500">Loading the library…</div>
+          ) : resourcesQuery.isError ? (
+            <EmptyState
+              icon={Library}
+              title="Could not load the library"
+              description={
+                resourcesQuery.error instanceof ApiError
+                  ? resourcesQuery.error.message
+                  : 'The library is unavailable right now.'
+              }
+              action={
+                <Button variant="outline" size="sm" onClick={() => void resourcesQuery.refetch()}>
+                  Try again
+                </Button>
+              }
+            />
+          ) : filtered.length === 0 ? (
             <EmptyState
               icon={Library}
               title="No resources found"
@@ -388,9 +436,14 @@ export function DigitalLibraryPage() {
                       <span className="text-[11px] text-slate-400">
                         {resource.size} · {formatDate(resource.created_at)}
                       </span>
-                      <Button variant="ghost" size="sm" onClick={() => onDownload(resource)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void onDownload(resource)}
+                        isLoading={downloadingId === resource.id}
+                      >
                         <Download className="h-3.5 w-3.5" />
-                        Open
+                        Download
                       </Button>
                     </div>
                   </article>

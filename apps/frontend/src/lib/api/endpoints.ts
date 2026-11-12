@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { apiClient, ApiError } from './client'
 import type { ApiEnvelope } from '../../types/api'
 import type {
   Activity,
@@ -11,7 +11,7 @@ import type {
   NotificationItem,
   ReportComment,
 } from '../../types/domain'
-import type { UpdateProfileData, User } from '../../types/auth'
+import type { UpdatePasswordData, UpdateProfileData, User } from '../../types/auth'
 
 function query(params?: Record<string, string | number | boolean | undefined>): string {
   if (!params) return ''
@@ -34,6 +34,42 @@ export interface ListResult<T> {
   total: number
 }
 
+async function downloadBlob(endpoint: string, fallbackName: string): Promise<void> {
+  const token = apiClient.getToken()
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    credentials: 'include',
+    headers: {
+      Accept: '*/*',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+
+  if (!response.ok) {
+    let message = `Download failed with status ${response.status}`
+    try {
+      const payload = await response.json()
+      message = payload.message ?? message
+    } catch {
+      // Response was not JSON.
+    }
+    throw new ApiError(response.status, message)
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)
+  const filename = match?.[1] ?? fallbackName
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 function toList<T>(response: ApiEnvelope<T[]>): ListResult<T> {
   const meta = response.meta
   return {
@@ -48,6 +84,8 @@ export const authApi = {
   me: () => unwrap<User>(apiClient.get<ApiEnvelope<User>>('/api/v1/auth/me')),
   updateProfile: (payload: UpdateProfileData) =>
     unwrap<User>(apiClient.patch<ApiEnvelope<User>>('/api/v1/auth/profile', payload)),
+  changePassword: (payload: UpdatePasswordData) =>
+    apiClient.patch<ApiEnvelope<null>>('/api/v1/auth/password', payload),
 }
 
 export const activitiesApi = {
@@ -139,27 +177,48 @@ export const notificationsApi = {
 export interface LibraryUploadInput {
   title: string
   description?: string
+  category?: string
   visibility: LibraryResource['visibility']
   status?: 'active' | 'archived'
   file: File
 }
 
+export interface LibraryItem {
+  id: number
+  uuid?: string
+  title: string
+  description?: string | null
+  category?: string | null
+  file_name: string
+  mime_type?: string | null
+  file_size?: number
+  visibility: LibraryResource['visibility']
+  status?: string
+  is_bookmarked?: boolean
+  download_url?: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
 export const libraryApi = {
   list: async (params?: Record<string, string | number | boolean | undefined>) =>
     toList(
-      await apiClient.get<ApiEnvelope<LibraryResource[]>>(`/api/v1/library${query(params)}`)
+      await apiClient.get<ApiEnvelope<LibraryItem[]>>(`/api/v1/library${query(params)}`)
     ),
   create: (input: LibraryUploadInput) => {
     const form = new FormData()
     form.append('title', input.title)
     if (input.description) form.append('description', input.description)
+    if (input.category) form.append('category', input.category)
     form.append('visibility', input.visibility)
     form.append('status', input.status ?? 'active')
     form.append('file', input.file)
-    return unwrap<LibraryResource>(
-      apiClient.post<ApiEnvelope<LibraryResource>>('/api/v1/library', form)
+    return unwrap<LibraryItem>(
+      apiClient.post<ApiEnvelope<LibraryItem>>('/api/v1/library', form)
     )
   },
+  download: (id: number, fallbackName: string) =>
+    downloadBlob(`/api/v1/library/${id}/download`, fallbackName),
 }
 
 export const healthApi = {

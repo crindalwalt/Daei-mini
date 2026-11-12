@@ -36,6 +36,7 @@ use App\Models\UserDevice;
 use App\Models\UserPrayerPreference;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class DevelopmentSeeder extends Seeder
 {
@@ -58,6 +59,8 @@ class DevelopmentSeeder extends Seeder
             [
                 'name' => 'Morning Routine Circle',
                 'description' => 'A small accountability group focused on consistent morning worship and reading.',
+                'leader_name' => 'Aisha Rahman',
+                'color' => 'emerald',
                 'created_by' => $admin->id,
                 'client_created_at' => now(),
                 'synced_at' => now(),
@@ -286,8 +289,12 @@ class DevelopmentSeeder extends Seeder
                 'summary' => 'Completed the morning routine and the planned run.',
                 'self_assessment' => 'Good focus in the morning; the evening review still needs work.',
                 'score' => 75.00,
+                'calculated_score' => 75.00,
+                'scheduled_count' => 4,
+                'completed_count' => 3,
                 'completed_activities_count' => 3,
                 'total_activities_count' => 4,
+                'status' => 'submitted',
                 'submitted_at' => now(),
                 'synced_at' => now(),
             ]
@@ -331,16 +338,44 @@ class DevelopmentSeeder extends Seeder
             ]
         );
 
-        $assignedResource = LibraryResource::firstOrCreate(
+        $readingPlanPdf = <<<'PDF'
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 74 >>
+stream
+BT /F1 20 Tf 72 720 Td (Ramadan Reading Plan) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+trailer
+<< /Size 6 /Root 1 0 R >>
+%%EOF
+PDF;
+
+        Storage::disk('local')->put('library/ramadan-reading-plan.pdf', $readingPlanPdf);
+
+        $assignedResource = LibraryResource::updateOrCreate(
             ['uuid' => 'c1000000-0000-4000-8000-000000000001'],
             [
                 'title' => 'Ramadan Reading Plan',
                 'description' => 'A group reading plan with daily targets and reflection prompts.',
+                'category' => 'Quran',
                 'file_name' => 'ramadan-reading-plan.pdf',
-                'storage_disk' => 's3',
+                'storage_disk' => 'local',
                 'storage_path' => 'library/ramadan-reading-plan.pdf',
                 'mime_type' => 'application/pdf',
-                'file_size' => 1_048_576,
+                'file_size' => strlen($readingPlanPdf),
                 'uploaded_by' => $admin->id,
                 'visibility' => LibraryVisibility::Assigned,
                 'status' => 'active',
@@ -356,16 +391,25 @@ class DevelopmentSeeder extends Seeder
             ]
         );
 
-        $publicResource = LibraryResource::firstOrCreate(
+        $reflectionTemplate = "# Weekly Reflection Template\n\n"
+            ."Use this template at the end of each week to review your progress.\n\n"
+            ."## What went well?\n\n- \n\n"
+            ."## What could improve?\n\n- \n\n"
+            ."## Focus for next week\n\n- \n";
+
+        Storage::disk('local')->put('library/weekly-reflection-template.md', $reflectionTemplate);
+
+        $publicResource = LibraryResource::updateOrCreate(
             ['uuid' => 'c1000000-0000-4000-8000-000000000003'],
             [
                 'title' => 'Weekly Reflection Template',
                 'description' => 'A simple template for the weekly personal review.',
+                'category' => 'Planning',
                 'file_name' => 'weekly-reflection-template.md',
-                'storage_disk' => 's3',
+                'storage_disk' => 'local',
                 'storage_path' => 'library/weekly-reflection-template.md',
                 'mime_type' => 'text/markdown',
-                'file_size' => 8_192,
+                'file_size' => strlen($reflectionTemplate),
                 'uploaded_by' => $admin->id,
                 'visibility' => LibraryVisibility::Public,
                 'status' => 'active',

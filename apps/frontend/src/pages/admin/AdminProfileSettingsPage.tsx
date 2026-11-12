@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -22,6 +23,7 @@ import { Tabs } from '../../components/ui/Tabs'
 import { useToast } from '../../components/ui/toast/ToastProvider'
 import { useAuth } from '../../features/auth/useAuth'
 import { authApi } from '../../lib/api/endpoints'
+import { adminApi } from '../../lib/api/admin'
 import { ApiError } from '../../lib/api/client'
 
 const profileSchema = z.object({
@@ -57,6 +59,7 @@ const timezones = [
 export function AdminProfileSettingsPage() {
   const { user } = useAuth()
   const toast = useToast()
+  const queryClient = useQueryClient()
   const [tab, setTab] = useState('profile')
   const [preferences, setPreferences] = useState({
     reportEmails: true,
@@ -66,6 +69,24 @@ export function AdminProfileSettingsPage() {
     compactTables: false,
   })
 
+  const groupsSummaryQuery = useQuery({
+    queryKey: ['admin', 'groups', 'settings-summary'],
+    queryFn: () => adminApi.groups.list({ per_page: 1 }),
+    staleTime: 60_000,
+  })
+
+  const reportsSummaryQuery = useQuery({
+    queryKey: ['admin', 'reports', 'settings-summary'],
+    queryFn: () => adminApi.reports.list({ per_page: 1 }),
+    staleTime: 60_000,
+  })
+
+  const memberSince = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+    : '—'
+  const groupsManaged = groupsSummaryQuery.data?.stats.total
+  const reportsReviewed = reportsSummaryQuery.data?.stats.reviewed
+
   const {
     register: registerProfile,
     handleSubmit: handleProfileSubmit,
@@ -73,10 +94,10 @@ export function AdminProfileSettingsPage() {
   } = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      name: user?.name ?? 'Maryam Idris',
-      email: user?.email ?? 'admin@thinkcode.dev',
-      timezone: user?.timezone ?? 'Europe/London',
-      bio: 'Programme administrator focused on member growth and consistent reporting.',
+      name: user?.name ?? '',
+      email: user?.email ?? '',
+      timezone: user?.prayer_preferences?.timezone ?? 'Europe/London',
+      bio: user?.bio ?? '',
     },
   })
 
@@ -84,6 +105,7 @@ export function AdminProfileSettingsPage() {
     register: registerPassword,
     handleSubmit: handlePasswordSubmit,
     reset: resetPasswordForm,
+    setError: setPasswordError,
     formState: { errors: passwordErrors, isSubmitting: savingPassword },
   } = useForm<PasswordValues>({
     resolver: zodResolver(passwordSchema),
@@ -92,23 +114,44 @@ export function AdminProfileSettingsPage() {
 
   const onSaveProfile = async (values: ProfileValues) => {
     try {
-      await authApi.updateProfile({ name: values.name, email: values.email, timezone: values.timezone })
+      await authApi.updateProfile({
+        name: values.name,
+        email: values.email,
+        bio: values.bio?.trim() ? values.bio.trim() : null,
+        timezone: values.timezone,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
       toast.success('Your profile details have been saved.', 'Profile updated')
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message, 'Could not save profile')
       } else {
-        toast.info('Saved locally. The API is currently unreachable.', 'Offline mode')
+        toast.error('The profile service is unavailable right now.', 'Could not save profile')
       }
     }
   }
 
   const onChangePassword = async (values: PasswordValues) => {
-    // Password updates are simulated locally — the API contract for this lives on the profile route.
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    resetPasswordForm()
-    toast.success('Your password was changed successfully.', 'Security updated')
-    void values
+    try {
+      await authApi.changePassword({
+        current_password: values.current_password,
+        password: values.password,
+        password_confirmation: values.password_confirmation,
+      })
+      resetPasswordForm()
+      toast.success('Your password was changed successfully.', 'Security updated')
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const currentPasswordError = err.errors?.current_password?.[0]
+        if (currentPasswordError) {
+          setPasswordError('current_password', { message: currentPasswordError })
+          return
+        }
+        toast.error(err.message, 'Could not update password')
+      } else {
+        toast.error('The security service is unavailable right now.', 'Could not update password')
+      }
+    }
   }
 
   const togglePreference = (key: keyof typeof preferences) => {
@@ -138,15 +181,19 @@ export function AdminProfileSettingsPage() {
             <div className="mt-5 w-full space-y-2.5 text-left text-sm">
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                 <span className="text-slate-500">Member since</span>
-                <span className="font-semibold text-slate-700">Jan 2025</span>
+                <span className="font-semibold text-slate-700">{memberSince}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                 <span className="text-slate-500">Groups managed</span>
-                <span className="font-semibold text-slate-700">6</span>
+                <span className="font-semibold text-slate-700">
+                  {groupsManaged ?? '—'}
+                </span>
               </div>
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                 <span className="text-slate-500">Reports reviewed</span>
-                <span className="font-semibold text-slate-700">312</span>
+                <span className="font-semibold text-slate-700">
+                  {reportsReviewed ?? '—'}
+                </span>
               </div>
             </div>
           </CardContent>

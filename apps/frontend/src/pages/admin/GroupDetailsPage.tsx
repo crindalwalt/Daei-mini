@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
   CalendarDays,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 import { StatCard } from '../../components/shared/StatCard'
 import { ActivityStatusBadge, ActivityTypeBadge, UserStatusBadge } from '../../components/shared/StatusBadge'
+import { EmptyState } from '../../components/shared/EmptyState'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
@@ -20,17 +22,37 @@ import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/Table'
 import { useToast } from '../../components/ui/toast/ToastProvider'
-import { adminActivities, groupMembers, groups } from '../../lib/mockData'
+import { adminApi } from '../../lib/api/admin'
+import { ApiError } from '../../lib/api/client'
 import { formatDate, formatTime } from '../../lib/format'
-import type { AdminUser } from '../../types/domain'
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
 
 export function GroupDetailsPage() {
   const { id } = useParams<{ id: string }>()
   const toast = useToast()
-  const group = groups.find((item) => item.id === Number(id)) ?? groups[0]
-  const [members, setMembers] = useState<AdminUser[]>(groupMembers)
+  const queryClient = useQueryClient()
   const [modalOpen, setModalOpen] = useState(false)
   const [draft, setDraft] = useState({ name: '', email: '' })
+
+  const groupQuery = useQuery({
+    queryKey: ['admin', 'group', id],
+    queryFn: () => adminApi.groups.get(id ?? ''),
+    enabled: Boolean(id),
+    staleTime: 15_000,
+  })
+
+  const activitiesQuery = useQuery({
+    queryKey: ['admin', 'group-activities', id],
+    queryFn: () => adminApi.activities.list({ per_page: 100 }),
+    enabled: Boolean(id),
+    staleTime: 30_000,
+  })
+
+  const group = groupQuery.data
+  const members = useMemo(() => group?.members ?? [], [group])
 
   const avgProgress = useMemo(
     () =>
@@ -40,29 +62,75 @@ export function GroupDetailsPage() {
     [members]
   )
 
-  const addMember = () => {
+  const assignedActivities = useMemo(() => {
+    const memberIds = new Set(members.map((member) => member.id))
+    return (activitiesQuery.data?.items ?? [])
+      .filter((activity) => activity.user_id !== undefined && memberIds.has(activity.user_id))
+      .slice(0, 8)
+  }, [activitiesQuery.data, members])
+
+  const addMember = useMutation({
+    mutationFn: () => {
+      if (!group) throw new Error('Group is not loaded yet.')
+      return adminApi.users.create({
+        name: draft.name.trim(),
+        email: draft.email.trim(),
+        role: 'user',
+        group_id: group.id,
+        status: 'pending',
+        send_invitation: true,
+      })
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'group', id] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })
+      setDraft({ name: '', email: '' })
+      setModalOpen(false)
+      if (result.invitation_sent) {
+        toast.success(`${result.user.name} was added and invited by email.`, 'Member added')
+      } else {
+        toast.info(`${result.user.name} was added, but the invitation email could not be sent.`, 'Member added')
+      }
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Could not add the member.'), 'Unable to add member')
+    },
+  })
+
+  const submitMember = () => {
     if (!draft.name.trim() || !draft.email.trim()) {
       toast.error('Enter a name and email address to add a member.')
       return
     }
-    setMembers((current) => [
-      {
-        id: Date.now(),
-        name: draft.name,
-        email: draft.email,
-        role: 'user',
-        status: 'pending',
-        group: group.name,
-        joined_at: new Date().toISOString().slice(0, 10),
-        progress: 0,
-        activities: 0,
-        reports: 0,
-      },
-      ...current,
-    ])
-    setDraft({ name: '', email: '' })
-    setModalOpen(false)
-    toast.success(`${draft.name} was added to ${group.name}.`, 'Member added')
+    addMember.mutate()
+  }
+
+  if (!id) {
+    return (
+      <EmptyState
+        icon={UsersRound}
+        title="Group not found"
+        description="No group identifier was provided."
+        action={<Link to="/admin/groups"><Button variant="outline" size="sm">Back to groups</Button></Link>}
+      />
+    )
+  }
+
+  if (groupQuery.isLoading) {
+    return <div className="py-16 text-center text-sm text-slate-500">Loading group…</div>
+  }
+
+  if (groupQuery.isError || !group) {
+    return (
+      <EmptyState
+        icon={UsersRound}
+        title="Could not load this group"
+        description={errorMessage(groupQuery.error, 'The group may have been removed.')}
+        action={<Link to="/admin/groups"><Button variant="outline" size="sm">Back to groups</Button></Link>}
+      />
+    )
   }
 
   return (
@@ -87,9 +155,12 @@ export function GroupDetailsPage() {
                 {group.members_count} members
               </span>
               <h1 className="mt-2 text-2xl font-bold tracking-tight">{group.name}</h1>
-              <p className="mt-1 max-w-xl text-sm text-brand-100/90">{group.description}</p>
+              <p className="mt-1 max-w-xl text-sm text-brand-100/90">
+                {group.description ?? 'No description provided for this group yet.'}
+              </p>
               <p className="mt-2 text-xs text-brand-200">
-                Led by {group.leader} · created {group.created_at ? formatDate(group.created_at) : 'recently'}
+                Led by {group.leader ?? 'an unassigned leader'} · created{' '}
+                {group.created_at ? formatDate(group.created_at) : 'recently'}
               </p>
             </div>
           </div>
@@ -123,41 +194,47 @@ export function GroupDetailsPage() {
             </Button>
           </CardHeader>
           <CardContent className="px-0 pb-0 sm:px-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Joined</TableHead>
-                  <TableHead>Progress</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((member) => (
-                  <TableRow key={member.id}>
-                    <TableCell>
-                      <Link to={`/admin/users/${member.id}`} className="flex items-center gap-3">
-                        <Avatar name={member.name} size="sm" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-800 hover:text-brand-700">
-                            {member.name}
-                          </p>
-                          <p className="truncate text-xs text-slate-500">{member.email}</p>
-                        </div>
-                      </Link>
-                    </TableCell>
-                    <TableCell><UserStatusBadge status={member.status} /></TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-slate-500">
-                      {formatDate(member.joined_at)}
-                    </TableCell>
-                    <TableCell className="min-w-32">
-                      <Progress value={member.progress ?? 0} size="sm" />
-                      <p className="mt-1 text-[10px] font-medium text-slate-400">{member.progress ?? 0}%</p>
-                    </TableCell>
+            {members.length === 0 ? (
+              <div className="p-6 text-sm text-slate-500">
+                No members yet. Use “Add member” to invite the first member.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Member</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Joined</TableHead>
+                    <TableHead>Progress</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {members.map((member) => (
+                    <TableRow key={member.id}>
+                      <TableCell>
+                        <Link to={`/admin/users/${member.id}`} className="flex items-center gap-3">
+                          <Avatar name={member.name} size="sm" />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-800 hover:text-brand-700">
+                              {member.name}
+                            </p>
+                            <p className="truncate text-xs text-slate-500">{member.email}</p>
+                          </div>
+                        </Link>
+                      </TableCell>
+                      <TableCell><UserStatusBadge status={member.status} /></TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                        {formatDate(member.joined_at)}
+                      </TableCell>
+                      <TableCell className="min-w-32">
+                        <Progress value={member.progress ?? 0} size="sm" />
+                        <p className="mt-1 text-[10px] font-medium text-slate-400">{member.progress ?? 0}%</p>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 
@@ -169,20 +246,16 @@ export function GroupDetailsPage() {
             <CardContent className="flex flex-col items-center gap-4">
               <CircularProgress value={group.progress} size={140} strokeWidth={11} />
               <p className="text-center text-xs text-slate-500">
-                {group.progress}% of assigned activities completed by this group.
+                {group.progress}% average report score across this group.
               </p>
               <div className="w-full space-y-2.5 text-sm">
                 <div className="flex items-center justify-between text-slate-500">
-                  <span>Activities done</span>
-                  <span className="font-semibold text-slate-800">
-                    {Math.round((group.progress / 100) * group.activities_count)}
-                  </span>
+                  <span>Activities logged</span>
+                  <span className="font-semibold text-slate-800">{group.activities_count}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-500">
-                  <span>Remaining</span>
-                  <span className="font-semibold text-slate-800">
-                    {group.activities_count - Math.round((group.progress / 100) * group.activities_count)}
-                  </span>
+                  <span>Members</span>
+                  <span className="font-semibold text-slate-800">{members.length}</span>
                 </div>
               </div>
             </CardContent>
@@ -195,8 +268,8 @@ export function GroupDetailsPage() {
             <CardContent className="space-y-3">
               {[
                 { label: 'Group created', done: true },
-                { label: 'First 10 members', done: true },
-                { label: '80% weekly completion', done: group.progress >= 80 },
+                { label: 'First member added', done: members.length >= 1 },
+                { label: '80% average completion', done: group.progress >= 80 },
                 { label: 'Monthly review', done: false },
               ].map((milestone) => (
                 <div key={milestone.label} className="flex items-center gap-2.5 text-sm">
@@ -221,43 +294,64 @@ export function GroupDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Assigned activities</CardTitle>
+          <CardTitle>Recent member activities</CardTitle>
         </CardHeader>
         <CardContent className="px-0 pb-0 sm:px-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Activity</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Schedule</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {adminActivities.slice(0, 6).map((activity) => (
-                <TableRow key={activity.id}>
-                  <TableCell className="font-medium text-slate-800">{activity.title}</TableCell>
-                  <TableCell><ActivityTypeBadge type={activity.activity_type} /></TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-slate-500">
-                    {formatDate(activity.scheduled_date)} · {formatTime(activity.start_time)}
-                  </TableCell>
-                  <TableCell><ActivityStatusBadge status={activity.status} /></TableCell>
+          {assignedActivities.length === 0 ? (
+            <div className="p-6 text-sm text-slate-500">
+              No activities have been logged by this group's members yet.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Activity</TableHead>
+                  <TableHead>Member</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Schedule</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {assignedActivities.map((activity) => (
+                  <TableRow key={activity.id}>
+                    <TableCell className="font-medium text-slate-800">{activity.title}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-slate-600">
+                      {activity.user_name ?? 'Member'}
+                    </TableCell>
+                    <TableCell><ActivityTypeBadge type={activity.activity_type} /></TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                      {formatDate(activity.scheduled_date)} · {formatTime(activity.start_time)}
+                    </TableCell>
+                    <TableCell><ActivityStatusBadge status={activity.status} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false)
+          setDraft({ name: '', email: '' })
+        }}
         title={`Add a member to ${group.name}`}
-        description="New members start as pending until they accept the invitation."
+        description="New members start as pending until they accept the emailed invitation."
         footer={
           <>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button onClick={addMember}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setModalOpen(false)
+                setDraft({ name: '', email: '' })
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={submitMember} isLoading={addMember.isPending}>
               <UserPlus className="h-4 w-4" />
               Add member
             </Button>
@@ -278,6 +372,9 @@ export function GroupDetailsPage() {
             value={draft.email}
             onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))}
           />
+          <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+            An invitation email with a six-digit code will be sent. It expires after 15 minutes.
+          </p>
         </div>
       </Modal>
     </div>

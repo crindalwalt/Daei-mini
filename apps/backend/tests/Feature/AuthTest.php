@@ -273,9 +273,10 @@ class AuthTest extends TestCase
                 ],
             ])
             ->assertJsonMissingPath('data.user.password')
-            ->assertJsonMissingPath('data.user.remember_token')
-            ->assertJsonMissingPath('data.user.created_at')
-            ->assertJsonMissingPath('data.user.updated_at');
+            ->assertJsonMissingPath('data.user.remember_token');
+
+        $this->assertNotNull($response->json('data.user.created_at'));
+        $this->assertNotNull($response->json('data.user.updated_at'));
     }
 
     public function test_unauthenticated_request_returns_401(): void
@@ -333,6 +334,65 @@ class AuthTest extends TestCase
             'timezone' => 'Mars/Olympus_Mons',
         ])->assertStatus(422)
             ->assertJsonValidationErrors(['timezone']);
+    }
+
+    public function test_authenticated_user_can_update_email_and_bio(): void
+    {
+        $user = User::factory()->create(['email' => 'old@thinkcode.dev']);
+
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/v1/auth/profile', [
+            'email' => 'new@thinkcode.dev',
+            'bio' => 'Programme administrator focused on member growth.',
+        ])->assertStatus(200)
+            ->assertJsonPath('data.user.email', 'new@thinkcode.dev')
+            ->assertJsonPath('data.user.bio', 'Programme administrator focused on member growth.');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'email' => 'new@thinkcode.dev',
+            'bio' => 'Programme administrator focused on member growth.',
+        ]);
+    }
+
+    public function test_authenticated_user_can_change_password(): void
+    {
+        $user = User::factory()->create([
+            'password' => Hash::make('OldPassword123!'),
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/v1/auth/password', [
+            'current_password' => 'OldPassword123!',
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ])->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'message' => 'Password updated successfully.',
+            ]);
+
+        $this->assertTrue(Hash::check('NewPassword123!', $user->refresh()->password));
+    }
+
+    public function test_password_change_rejects_an_incorrect_current_password(): void
+    {
+        $user = User::factory()->create([
+            'password' => Hash::make('OldPassword123!'),
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/v1/auth/password', [
+            'current_password' => 'WrongPassword123!',
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['current_password']);
+
+        $this->assertTrue(Hash::check('OldPassword123!', $user->refresh()->password));
     }
 
     public function test_logout_revokes_the_current_access_token(): void
@@ -494,13 +554,28 @@ class AuthTest extends TestCase
 
         $this->assertDatabaseCount('personal_access_tokens', 1);
 
-        $token = $this->postJson('/api/v1/auth/forgot-password', [
+        Notification::fake();
+
+        $this->postJson('/api/v1/auth/forgot-password', [
             'email' => 'reset@thinkcode.dev',
         ])->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('message', 'If the account exists, a one-time code has been sent.')
-            ->json('data.reset_token');
+            ->assertJsonMissingPath('data.reset_token');
 
+        $token = null;
+
+        Notification::assertSentTo(
+            $user,
+            ResetPasswordOtpNotification::class,
+            function (ResetPasswordOtpNotification $notification) use (&$token): bool {
+                $token = $notification->code;
+
+                return true;
+            },
+        );
+
+        $this->assertIsString($token);
         $this->assertMatchesRegularExpression('/^\d{6}$/', $token);
 
         $this->assertDatabaseHas('password_reset_tokens', [

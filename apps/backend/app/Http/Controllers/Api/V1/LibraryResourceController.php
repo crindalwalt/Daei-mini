@@ -64,6 +64,7 @@ class LibraryResourceController extends Controller
         $resource = LibraryResource::create([
             'title' => $request->string('title')->toString(),
             'description' => $request->input('description'),
+            'category' => $request->input('category'),
             'file_name' => $file->getClientOriginalName(),
             'storage_disk' => 'local',
             'storage_path' => $path,

@@ -25,6 +25,8 @@ class Group extends Model
         'uuid',
         'name',
         'description',
+        'leader_name',
+        'color',
         'created_by',
         'client_created_at',
         'client_updated_at',

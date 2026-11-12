@@ -140,10 +140,26 @@ export function UserSettingsPage() {
   }
 
   const onChangePassword = async (values: PasswordValues) => {
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    void values
-    passwordForm.reset()
-    toast.success('Your password was changed successfully.', 'Security updated')
+    try {
+      await authApi.changePassword({
+        current_password: values.current_password,
+        password: values.password,
+        password_confirmation: values.password_confirmation,
+      })
+      passwordForm.reset()
+      toast.success('Your password was changed successfully.', 'Security updated')
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const currentPasswordError = err.errors?.current_password?.[0]
+        if (currentPasswordError) {
+          passwordForm.setError('current_password', { message: currentPasswordError })
+          return
+        }
+        toast.error(err.message, 'Could not update password')
+      } else {
+        toast.error('The security service is unavailable right now.', 'Could not update password')
+      }
+    }
   }
 
   const toggleNotification = (key: keyof typeof notifications) => {

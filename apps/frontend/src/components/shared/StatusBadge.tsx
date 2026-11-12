@@ -16,6 +16,7 @@ export function UserStatusBadge({ status }: { status: UserStatus }) {
     active: { variant: 'success' as const, label: 'Active' },
     pending: { variant: 'warning' as const, label: 'Pending' },
     inactive: { variant: 'secondary' as const, label: 'Inactive' },
+    suspended: { variant: 'destructive' as const, label: 'Suspended' },
   }
   const meta = map[status]
   return (

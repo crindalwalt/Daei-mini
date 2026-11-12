@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
+  Ban,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
@@ -20,6 +22,7 @@ import {
   ScoreBadge,
   UserStatusBadge,
 } from '../../components/shared/StatusBadge'
+import { EmptyState } from '../../components/shared/EmptyState'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
@@ -31,34 +34,163 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/Table'
 import { useToast } from '../../components/ui/toast/ToastProvider'
-import { adminActivities, adminReports, adminUsers } from '../../lib/mockData'
+import { adminApi, type AdminUserInput } from '../../lib/api/admin'
+import { ApiError } from '../../lib/api/client'
 import { formatDate, formatDateTime, formatTime } from '../../lib/format'
-import type { AdminUser, UserStatus } from '../../types/domain'
+
+interface ProfileDraft {
+  name: string
+  email: string
+  role: 'admin' | 'user'
+  group_id: string
+  status: 'active' | 'pending' | 'inactive'
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
 
 export function UserDetailsPage() {
   const { id } = useParams<{ id: string }>()
   const toast = useToast()
-  const baseUser = adminUsers.find((user) => user.id === Number(id)) ?? adminUsers[0]
-  const [profile, setProfile] = useState<AdminUser>(baseUser)
+  const queryClient = useQueryClient()
   const [tab, setTab] = useState('overview')
   const [editOpen, setEditOpen] = useState(false)
-  const [draft, setDraft] = useState({ name: baseUser.name, email: baseUser.email, group: baseUser.group ?? '' })
+  const [suspendOpen, setSuspendOpen] = useState(false)
+  const [draft, setDraft] = useState<ProfileDraft>({
+    name: '',
+    email: '',
+    role: 'user',
+    group_id: '',
+    status: 'active',
+  })
 
-  const userReports = useMemo(
-    () => adminReports.filter((report) => report.user_id === profile.id),
-    [profile.id]
-  )
+  const userQuery = useQuery({
+    queryKey: ['admin', 'user', id],
+    queryFn: () => adminApi.users.get(id ?? ''),
+    enabled: Boolean(id),
+    staleTime: 15_000,
+  })
 
-  const saveProfile = () => {
-    setProfile((current) => ({ ...current, ...draft }))
-    setEditOpen(false)
-    toast.success('Profile details updated.', 'Saved')
+  const groupsQuery = useQuery({
+    queryKey: ['admin', 'groups', 'options'],
+    queryFn: () => adminApi.groups.list({ per_page: 100 }),
+    staleTime: 60_000,
+  })
+
+  const profile = userQuery.data?.user
+  const reports = userQuery.data?.reports ?? []
+  const activities = userQuery.data?.activities ?? []
+  const groupOptions = groupsQuery.data?.items ?? []
+
+  useEffect(() => {
+    if (!profile) return
+    const editableStatus: ProfileDraft['status'] =
+      profile.status === 'suspended'
+        ? profile.invited_at && !profile.invitation_accepted_at
+          ? 'pending'
+          : profile.is_active === false
+            ? 'inactive'
+            : 'active'
+        : profile.status
+
+    setDraft({
+      name: profile.name,
+      email: profile.email,
+      role: profile.role,
+      group_id: profile.groups?.[0] ? String(profile.groups[0].id) : '',
+      status: editableStatus,
+    })
+  }, [profile])
+
+  const updateUser = useMutation({
+    mutationFn: (values: ProfileDraft) => {
+      const payload: Partial<AdminUserInput> = {
+        name: values.name.trim(),
+        email: values.email.trim(),
+        role: values.role,
+        group_id: values.group_id ? Number(values.group_id) : null,
+        status: values.status,
+      }
+      return adminApi.users.update(id ?? '', payload)
+    },
+    onSuccess: (user) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'user', id] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'groups'] })
+      setEditOpen(false)
+      toast.success('Profile details updated.', 'Saved')
+      void user
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Could not update the profile.'), 'Update failed')
+    },
+  })
+
+  const toggleStatus = useMutation({
+    mutationFn: () =>
+      profile?.status === 'pending'
+        ? adminApi.users.update(id ?? '', { status: 'active' })
+        : adminApi.users.toggleStatus(id ?? ''),
+    onSuccess: (user) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'user', id] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })
+      toast.success(`${user.name} is now ${user.status}.`)
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Could not update the account.'), 'Update failed')
+    },
+  })
+
+  const toggleSuspension = useMutation({
+    mutationFn: () => adminApi.users.toggleSuspension(id ?? ''),
+    onSuccess: (user) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'user', id] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'groups'] })
+      setSuspendOpen(false)
+
+      if (user.status === 'suspended') {
+        toast.success(`${user.name} can no longer access the system.`, 'User suspended')
+      } else {
+        toast.success(`${user.name} can access the system again.`, 'Suspension lifted')
+      }
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Could not update the suspension.'), 'Update failed')
+    },
+  })
+
+  const isSuspended = profile?.status === 'suspended'
+  const isActive = profile?.is_active ?? profile?.status === 'active'
+
+  if (!id) {
+    return (
+      <EmptyState
+        icon={ClipboardList}
+        title="User not found"
+        description="No user identifier was provided."
+        action={<Link to="/admin/users"><Button variant="outline" size="sm">Back to users</Button></Link>}
+      />
+    )
   }
 
-  const toggleStatus = () => {
-    const next: UserStatus = profile.status === 'active' ? 'inactive' : 'active'
-    setProfile((current) => ({ ...current, status: next }))
-    toast.info(`${profile.name} is now ${next}.`)
+  if (userQuery.isLoading) {
+    return <div className="py-16 text-center text-sm text-slate-500">Loading member…</div>
+  }
+
+  if (userQuery.isError || !profile) {
+    return (
+      <EmptyState
+        icon={ClipboardList}
+        title="Could not load this member"
+        description={errorMessage(userQuery.error, 'The member may have been removed.')}
+        action={<Link to="/admin/users"><Button variant="outline" size="sm">Back to users</Button></Link>}
+      />
+    )
   }
 
   return (
@@ -98,11 +230,25 @@ export function UserDetailsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={toggleStatus}
-                className={profile.status === 'active' ? 'text-amber-700' : 'text-emerald-700'}
+                onClick={() => toggleStatus.mutate()}
+                isLoading={toggleStatus.isPending}
+                className={isActive ? 'text-amber-700' : 'text-emerald-700'}
               >
                 <UserX className="h-3.5 w-3.5" />
-                {profile.status === 'active' ? 'Deactivate' : 'Activate account'}
+                {isActive ? 'Deactivate' : 'Activate account'}
+              </Button>
+              <Button
+                variant={isSuspended ? 'outline' : 'destructive'}
+                size="sm"
+                onClick={() => setSuspendOpen(true)}
+                className={isSuspended ? 'text-emerald-700' : undefined}
+              >
+                {isSuspended ? (
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                ) : (
+                  <Ban className="h-3.5 w-3.5" />
+                )}
+                {isSuspended ? 'Unsuspend user' : 'Suspend user'}
               </Button>
             </div>
           </div>
@@ -121,8 +267,8 @@ export function UserDetailsPage() {
           onChange={setTab}
           items={[
             { id: 'overview', label: 'Overview' },
-            { id: 'activities', label: 'Activities', count: 6 },
-            { id: 'reports', label: 'Reports', count: userReports.length },
+            { id: 'activities', label: 'Activities', count: activities.length },
+            { id: 'reports', label: 'Reports', count: reports.length },
           ]}
         />
         <p className="text-xs text-slate-400">
@@ -137,7 +283,9 @@ export function UserDetailsPage() {
               <CardTitle>About</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              <p className="text-sm leading-relaxed text-slate-600">{profile.bio ?? 'No profile summary yet.'}</p>
+              <p className="text-sm leading-relaxed text-slate-600">
+                {profile.bio ?? 'No profile summary yet.'}
+              </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {[
                   { icon: Mail, label: 'Email', value: profile.email },
@@ -199,11 +347,15 @@ export function UserDetailsPage() {
               <CardContent className="space-y-3 text-sm text-slate-600">
                 <div className="flex items-center justify-between">
                   <span>Email verified</span>
-                  <Badge variant="success">Yes</Badge>
+                  <Badge variant={profile.email_verified ? 'success' : 'warning'}>
+                    {profile.email_verified ? 'Yes' : 'No'}
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Two-factor auth</span>
-                  <Badge variant="warning">Off</Badge>
+                  <span>Invitation</span>
+                  <Badge variant={profile.status === 'pending' ? 'warning' : 'success'}>
+                    {profile.status === 'pending' ? 'Pending' : 'Accepted'}
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Last active</span>
@@ -224,32 +376,36 @@ export function UserDetailsPage() {
             <CardTitle>Recent activities</CardTitle>
           </CardHeader>
           <CardContent className="px-0 pb-0 sm:px-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Activity</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {adminActivities.slice(0, 6).map((activity) => (
-                  <TableRow key={activity.id}>
-                    <TableCell className="font-medium text-slate-800">{activity.title}</TableCell>
-                    <TableCell><ActivityTypeBadge type={activity.activity_type} /></TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-slate-500">
-                      {formatDate(activity.scheduled_date)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-slate-500">
-                      {formatTime(activity.start_time)}
-                    </TableCell>
-                    <TableCell><ActivityStatusBadge status={activity.status} /></TableCell>
+            {activities.length === 0 ? (
+              <div className="p-6 text-sm text-slate-500">No activities logged by this member yet.</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Activity</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {activities.map((activity) => (
+                    <TableRow key={activity.id}>
+                      <TableCell className="font-medium text-slate-800">{activity.title}</TableCell>
+                      <TableCell><ActivityTypeBadge type={activity.activity_type} /></TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                        {formatDate(activity.scheduled_date)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-slate-500">
+                        {formatTime(activity.start_time)}
+                      </TableCell>
+                      <TableCell><ActivityStatusBadge status={activity.status} /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       )}
@@ -260,7 +416,7 @@ export function UserDetailsPage() {
             <CardTitle>Submitted reports</CardTitle>
           </CardHeader>
           <CardContent className="px-0 pb-0 sm:px-0">
-            {userReports.length === 0 ? (
+            {reports.length === 0 ? (
               <div className="p-6 text-sm text-slate-500">No reports submitted by this user yet.</div>
             ) : (
               <Table>
@@ -274,7 +430,7 @@ export function UserDetailsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {userReports.map((report) => (
+                  {reports.map((report) => (
                     <TableRow key={report.id}>
                       <TableCell className="whitespace-nowrap text-xs text-slate-500">
                         {formatDate(report.report_date)}
@@ -299,14 +455,60 @@ export function UserDetailsPage() {
       )}
 
       <Modal
+        open={suspendOpen}
+        onClose={() => {
+          if (!toggleSuspension.isPending) setSuspendOpen(false)
+        }}
+        title={isSuspended ? 'Unsuspend this user?' : 'Suspend this user?'}
+        description={
+          isSuspended
+            ? 'The account will be able to sign in and use the system again.'
+            : 'The account will immediately lose access to the system. Their active sessions and tokens will be revoked.'
+        }
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setSuspendOpen(false)}
+              disabled={toggleSuspension.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={isSuspended ? 'default' : 'destructive'}
+              onClick={() => toggleSuspension.mutate()}
+              isLoading={toggleSuspension.isPending}
+            >
+              {isSuspended ? 'Unsuspend user' : 'Suspend user'}
+            </Button>
+          </>
+        }
+      >
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm text-slate-600">
+          <p className="font-semibold text-slate-800">{profile.name}</p>
+          <p className="mt-1 text-xs text-slate-500">{profile.email}</p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            {isSuspended
+              ? 'Suspension is separate from deactivation, so the current active/inactive state is preserved.'
+              : 'Suspension is separate from deactivation: this is not a status change and can be reversed later.'}
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
         open={editOpen}
         onClose={() => setEditOpen(false)}
         title="Edit profile"
-        description="Update the member's basic account details."
+        description="Update the member's account details, group and status."
         footer={
           <>
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button onClick={saveProfile}>Save changes</Button>
+            <Button
+              onClick={() => updateUser.mutate(draft)}
+              isLoading={updateUser.isPending}
+            >
+              Save changes
+            </Button>
           </>
         }
       >
@@ -322,17 +524,43 @@ export function UserDetailsPage() {
             value={draft.email}
             onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))}
           />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Role"
+              value={draft.role}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, role: event.target.value as 'admin' | 'user' }))
+              }
+            >
+              <option value="user">Member</option>
+              <option value="admin">Administrator</option>
+            </Select>
+            <Select
+              label="Status"
+              value={draft.status}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  status: event.target.value as 'active' | 'pending' | 'inactive',
+                }))
+              }
+            >
+              <option value="active">Active</option>
+              <option value="pending">Pending invitation</option>
+              <option value="inactive">Inactive</option>
+            </Select>
+          </div>
           <Select
             label="Group"
-            value={draft.group}
-            onChange={(event) => setDraft((current) => ({ ...current, group: event.target.value }))}
+            value={draft.group_id}
+            onChange={(event) => setDraft((current) => ({ ...current, group_id: event.target.value }))}
           >
             <option value="">No group</option>
-            <option value="Morning Circle">Morning Circle</option>
-            <option value="Evening Study">Evening Study</option>
-            <option value="Health & Fitness">Health & Fitness</option>
-            <option value="Hifz Programme">Hifz Programme</option>
-            <option value="Sisters' Circle">Sisters' Circle</option>
+            {groupOptions.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
           </Select>
         </div>
       </Modal>

@@ -9,6 +9,7 @@ use App\Http\Requests\ForgotPasswordRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
 use App\Http\Requests\ResetPasswordRequest;
+use App\Http\Requests\UpdatePasswordRequest;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Http\Responses\ApiResponse;
@@ -44,6 +45,12 @@ class AuthController extends Controller
         if (! $user->is_active) {
             throw ValidationException::withMessages([
                 'email' => ['This account has been deactivated.'],
+            ]);
+        }
+
+        if ($user->suspended_at !== null) {
+            throw ValidationException::withMessages([
+                'email' => ['This account has been suspended. Please contact an administrator.'],
             ]);
         }
 
@@ -184,6 +191,22 @@ class AuthController extends Controller
         DB::transaction(function () use ($request, $user): void {
             if ($request->has('name')) {
                 $user->name = $request->string('name')->toString();
+            }
+
+            if ($request->has('email')) {
+                $email = $request->string('email')->toString();
+
+                if ($email !== $user->email) {
+                    $user->email = $email;
+                    $user->email_verified_at = null;
+                }
+            }
+
+            if ($request->has('bio')) {
+                $user->bio = $request->input('bio');
+            }
+
+            if ($user->isDirty()) {
                 $user->save();
             }
 
@@ -208,6 +231,31 @@ class AuthController extends Controller
         return ApiResponse::success([
             'user' => new UserResource($user),
         ], 'Profile updated successfully.');
+    }
+
+    /**
+     * Update the authenticated user's password.
+     */
+    public function updatePassword(UpdatePasswordRequest $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! Hash::check($request->string('current_password')->toString(), $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['The current password is incorrect.'],
+            ]);
+        }
+
+        $user->password = $request->string('password')->toString();
+        $user->save();
+
+        $currentToken = $user->currentAccessToken();
+
+        if ($currentToken instanceof PersonalAccessToken) {
+            $user->tokens()->where('id', '!=', $currentToken->getKey())->delete();
+        }
+
+        return ApiResponse::success(null, 'Password updated successfully.');
     }
 
     /**
@@ -241,11 +289,6 @@ class AuthController extends Controller
 
         $user->sendPasswordResetNotification($code);
 
-        // Keep the code available to local tooling/tests, but never expose it in production.
-        if (! app()->isProduction()) {
-            $data['reset_token'] = $code;
-        }
-
         return ApiResponse::success($data, $message);
     }
 
@@ -259,7 +302,14 @@ class AuthController extends Controller
             function (User $user, string $password): void {
                 $user->forceFill([
                     'password' => Hash::make($password),
-                ])->save();
+                    'invitation_accepted_at' => $user->invitation_accepted_at ?? now(),
+                ]);
+
+                if ($user->email_verified_at === null) {
+                    $user->email_verified_at = now();
+                }
+
+                $user->save();
 
                 // Revoke every previously issued token after a credential reset.
                 $user->tokens()->delete();

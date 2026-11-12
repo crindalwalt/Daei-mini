@@ -17,6 +17,7 @@ class LibraryItemResource extends JsonResource
             'uuid' => $this->uuid,
             'title' => $this->title,
             'description' => $this->description,
+            'category' => $this->category,
             'file_name' => $this->file_name,
             'mime_type' => $this->mime_type,
             'file_size' => (int) $this->file_size,

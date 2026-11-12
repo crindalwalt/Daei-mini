@@ -27,9 +27,15 @@ class TokenController extends Controller
 
         $user = User::where('email', $validated['email'])->first();
 
-        if (!$user || !Hash::check($validated['password'], $user->password)) {
+        if (! $user || ! Hash::check($validated['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => [trans('auth.failed')],
+            ]);
+        }
+
+        if ($user->suspended_at !== null) {
+            throw ValidationException::withMessages([
+                'email' => ['This account has been suspended. Please contact an administrator.'],
             ]);
         }
 
@@ -83,6 +89,7 @@ class TokenController extends Controller
 
         if ($token instanceof PersonalAccessToken) {
             $token->delete();
+
             return response()->json([
                 'message' => 'Current token revoked successfully.',
             ]);
@@ -100,7 +107,7 @@ class TokenController extends Controller
     {
         $deleted = $request->user()->tokens()->where('id', $id)->delete();
 
-        if (!$deleted) {
+        if (! $deleted) {
             return response()->json([
                 'message' => 'Token not found.',
             ], 404);
@@ -111,4 +118,3 @@ class TokenController extends Controller
         ]);
     }
 }
-

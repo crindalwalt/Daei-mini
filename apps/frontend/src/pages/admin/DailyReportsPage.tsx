@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Download,
   Flag,
@@ -19,42 +22,68 @@ import { Select } from '../../components/ui/Select'
 import { Avatar } from '../../components/ui/Avatar'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/Table'
 import { useToast } from '../../components/ui/toast/ToastProvider'
-import { adminReports } from '../../lib/mockData'
+import { adminApi } from '../../lib/api/admin'
+import { ApiError } from '../../lib/api/client'
+import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import { formatDate } from '../../lib/format'
+import type { DailyReport } from '../../types/domain'
+
+const PAGE_SIZE = 10
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
 
 export function DailyReportsPage() {
   const toast = useToast()
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [date, setDate] = useState('')
+  const [page, setPage] = useState(1)
+  const [exporting, setExporting] = useState(false)
 
-  const filtered = useMemo(
-    () =>
-      adminReports.filter((report) => {
-        const matchesSearch =
-          !search ||
-          (report.user_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-          (report.summary ?? '').toLowerCase().includes(search.toLowerCase())
-        const matchesStatus = status === 'all' || report.status === status
-        const matchesDate = !date || report.report_date === date
-        return matchesSearch && matchesStatus && matchesDate
+  const reportsQuery = useQuery({
+    queryKey: ['admin', 'reports', debouncedSearch, status, date, page],
+    queryFn: () =>
+      adminApi.reports.list({
+        q: debouncedSearch || undefined,
+        status: status === 'all' ? undefined : status,
+        date: date || undefined,
+        page,
+        per_page: PAGE_SIZE,
       }),
-    [search, status, date]
-  )
+    staleTime: 20_000,
+  })
 
-  const stats = useMemo(() => {
-    const scored = adminReports.filter((report) => (report.scheduled_count ?? 0) > 0)
-    const average =
-      scored.length === 0
-        ? 0
-        : scored.reduce((sum, report) => sum + (report.calculated_score ?? 0), 0) / scored.length
-    return {
-      average: average.toFixed(1),
-      submitted: adminReports.filter((report) => report.status === 'submitted').length,
-      reviewed: adminReports.filter((report) => report.status === 'reviewed').length,
-      flagged: adminReports.filter((report) => report.status === 'flagged').length,
+  const reports: DailyReport[] = reportsQuery.data?.items ?? []
+  const stats = reportsQuery.data?.stats ?? { average: 0, submitted: 0, reviewed: 0, flagged: 0 }
+  const meta = reportsQuery.data?.meta
+  const currentPage = meta?.current_page ?? page
+  const totalPages = Math.max(1, meta?.last_page ?? 1)
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      await adminApi.reports.export({
+        q: debouncedSearch || undefined,
+        status: status === 'all' ? undefined : status,
+        date: date || undefined,
+      })
+      toast.success('The daily reports CSV has been downloaded.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not export reports.'), 'Export failed')
+    } finally {
+      setExporting(false)
     }
-  }, [])
+  }
+
+  const clearFilters = () => {
+    setSearch('')
+    setStatus('all')
+    setDate('')
+    setPage(1)
+  }
 
   return (
     <div className="space-y-6">
@@ -63,7 +92,7 @@ export function DailyReportsPage() {
         title="Daily reports"
         description="Read submissions, review scores and leave feedback for members."
         actions={
-          <Button variant="outline" size="sm" onClick={() => toast.info('Preparing the report export…')}>
+          <Button variant="outline" size="sm" onClick={handleExport} isLoading={exporting}>
             <Download className="h-4 w-4" />
             Export CSV
           </Button>
@@ -71,7 +100,12 @@ export function DailyReportsPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Average score" value={`${stats.average}%`} icon={Star} hint="across scored reports" />
+        <StatCard
+          label="Average score"
+          value={`${stats.average}%`}
+          icon={Star}
+          hint="across scored reports"
+        />
         <StatCard label="Submitted" value={stats.submitted} icon={ClipboardList} accent="sky" hint="awaiting review" />
         <StatCard label="Reviewed" value={stats.reviewed} icon={CheckCircle2} accent="emerald" hint="completed" />
         <StatCard label="Flagged" value={stats.flagged} icon={Flag} accent="amber" hint="follow up needed" />
@@ -84,7 +118,10 @@ export function DailyReportsPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setPage(1)
+                }}
                 placeholder="Search by member or summary…"
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
                 aria-label="Search reports"
@@ -94,7 +131,10 @@ export function DailyReportsPage() {
               <Select
                 containerClassName="w-40"
                 value={status}
-                onChange={(event) => setStatus(event.target.value)}
+                onChange={(event) => {
+                  setStatus(event.target.value)
+                  setPage(1)
+                }}
                 aria-label="Filter by status"
               >
                 <option value="all">All statuses</option>
@@ -105,28 +145,32 @@ export function DailyReportsPage() {
               <input
                 type="date"
                 value={date}
-                onChange={(event) => setDate(event.target.value)}
+                onChange={(event) => {
+                  setDate(event.target.value)
+                  setPage(1)
+                }}
                 className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-600 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
                 aria-label="Filter by date"
               />
             </div>
           </div>
 
-          {filtered.length === 0 ? (
+          {reportsQuery.isLoading ? (
+            <div className="py-12 text-center text-sm text-slate-500">Loading reports…</div>
+          ) : reportsQuery.isError ? (
+            <EmptyState
+              icon={ClipboardList}
+              title="Could not load reports"
+              description={errorMessage(reportsQuery.error, 'The reports list is unavailable right now.')}
+              action={<Button variant="outline" size="sm" onClick={() => void reportsQuery.refetch()}>Try again</Button>}
+            />
+          ) : reports.length === 0 ? (
             <EmptyState
               icon={ClipboardList}
               title="No reports found"
               description="Try a different date, status or search term."
               action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSearch('')
-                    setStatus('all')
-                    setDate('')
-                  }}
-                >
+                <Button variant="outline" size="sm" onClick={clearFilters}>
                   Clear filters
                 </Button>
               }
@@ -145,7 +189,7 @@ export function DailyReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((report) => (
+                {reports.map((report) => (
                   <TableRow key={report.id}>
                     <TableCell>
                       <div className="flex items-center gap-2.5">
@@ -182,10 +226,36 @@ export function DailyReportsPage() {
             </Table>
           )}
 
-          <p className="text-xs text-slate-400">
-            Showing {filtered.length} of {adminReports.length} reports. Reports for previous days are
-            locked after submission.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs text-slate-500">
+            <p>
+              Showing {reports.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
+              {(currentPage - 1) * PAGE_SIZE + reports.length} of {meta?.total ?? reports.length} reports.
+              Reports for previous days are locked after submission.
+            </p>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={currentPage <= 1 || reportsQuery.isFetching}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="px-2 font-semibold text-slate-700">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={currentPage >= totalPages || reportsQuery.isFetching}
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                aria-label="Next page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

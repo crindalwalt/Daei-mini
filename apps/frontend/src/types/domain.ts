@@ -13,12 +13,14 @@ export type ActivityStatus = 'pending' | 'completed' | 'missed'
 
 export type GoalStatus = 'not_started' | 'in_progress' | 'completed' | 'paused'
 
-export type UserStatus = 'active' | 'pending' | 'inactive'
+export type UserStatus = 'active' | 'pending' | 'inactive' | 'suspended'
 
 export interface Activity {
   id: number
   uuid?: string
   user_id?: number
+  user_name?: string
+  user_email?: string
   title: string
   description?: string | null
   activity_type: ActivityType
@@ -41,21 +43,30 @@ export interface Group {
   progress: number
   color?: string
   leader?: string
+  members?: AdminUser[]
   created_at?: string
 }
 
 export interface AdminUser {
   id: number
+  uuid?: string
   name: string
   email: string
   role: 'admin' | 'user'
   status: UserStatus
+  is_active?: boolean
+  is_suspended?: boolean
+  suspended_at?: string | null
   group?: string | null
+  groups?: { id: number; name: string; color?: string | null }[]
   joined_at: string
   last_active?: string
   activities?: number
   reports?: number
   progress?: number
+  email_verified?: boolean
+  invited_at?: string | null
+  invitation_accepted_at?: string | null
   phone?: string | null
   location?: string | null
   bio?: string | null
@@ -74,7 +85,19 @@ export interface DailyReport {
   completed_count?: number
   status?: 'submitted' | 'reviewed' | 'flagged'
   comments_count?: number
+  reviewed_at?: string | null
+  submitted_at?: string | null
+  activities?: DailyReportActivity[]
   created_at?: string
+}
+
+export interface DailyReportActivity {
+  id: number
+  activity_title: string
+  activity_type: ActivityType
+  activity_status: ActivityStatus
+  start_time?: string | null
+  end_time?: string | null
 }
 
 export interface ReportComment {
@@ -187,6 +210,7 @@ export interface AdminStat {
   value: number
   change: number
   trend: 'up' | 'down'
+  series?: number[]
 }
 
 export interface ChartPoint {

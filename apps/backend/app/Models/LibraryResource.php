@@ -25,6 +25,7 @@ class LibraryResource extends Model
         'uuid',
         'title',
         'description',
+        'category',
         'file_name',
         'storage_disk',
         'storage_path',

@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
   Clock3,
+  Flag,
   MessageSquare,
   Send,
   User as UserIcon,
 } from 'lucide-react'
 import { ReportStatusBadge, ScoreBadge } from '../../components/shared/StatusBadge'
+import { EmptyState } from '../../components/shared/EmptyState'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
@@ -18,48 +21,95 @@ import { Badge } from '../../components/ui/Badge'
 import { CircularProgress, Progress } from '../../components/ui/Progress'
 import { Textarea } from '../../components/ui/Textarea'
 import { useToast } from '../../components/ui/toast/ToastProvider'
-import { useAuth } from '../../features/auth/useAuth'
-import { adminReports, adminUsers, reportComments } from '../../lib/mockData'
+import { adminApi } from '../../lib/api/admin'
+import { ApiError } from '../../lib/api/client'
 import { formatDate, formatDateTime, formatTime } from '../../lib/format'
-import type { ReportComment } from '../../types/domain'
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
 
 export function ReportDetailsPage() {
   const { id } = useParams<{ id: string }>()
   const toast = useToast()
-  const { user } = useAuth()
-  const baseReport = adminReports.find((report) => report.id === Number(id)) ?? adminReports[0]
-  const [report, setReport] = useState(baseReport)
-  const [comments, setComments] = useState<ReportComment[]>(reportComments)
+  const queryClient = useQueryClient()
   const [comment, setComment] = useState('')
 
-  const member = adminUsers.find((item) => item.id === report.user_id) ?? adminUsers[0]
+  const reportQuery = useQuery({
+    queryKey: ['admin', 'report', id],
+    queryFn: () => adminApi.reports.get(id ?? ''),
+    enabled: Boolean(id),
+    staleTime: 15_000,
+  })
+
+  const updateStatus = useMutation({
+    mutationFn: (status: 'submitted' | 'reviewed' | 'flagged') =>
+      adminApi.reports.updateStatus(id ?? '', status),
+    onSuccess: (report) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'report', id] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })
+      toast.success(`Report marked as ${report.status}.`)
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Could not update the report.'), 'Update failed')
+    },
+  })
+
+  const addComment = useMutation({
+    mutationFn: (message: string) => adminApi.reports.addComment(id ?? '', message),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'report', id] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'reports'] })
+      setComment('')
+      toast.success('Comment added to the report.', 'Feedback sent')
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Could not add the comment.'), 'Comment failed')
+    },
+  })
+
+  if (!id) {
+    return (
+      <EmptyState
+        icon={ClipboardList}
+        title="Report not found"
+        description="No report identifier was provided."
+        action={<Link to="/admin/reports"><Button variant="outline" size="sm">Back to reports</Button></Link>}
+      />
+    )
+  }
+
+  if (reportQuery.isLoading) {
+    return <div className="py-16 text-center text-sm text-slate-500">Loading report…</div>
+  }
+
+  if (reportQuery.isError || !reportQuery.data) {
+    return (
+      <EmptyState
+        icon={ClipboardList}
+        title="Could not load this report"
+        description={errorMessage(reportQuery.error, 'The report may have been removed.')}
+        action={<Link to="/admin/reports"><Button variant="outline" size="sm">Back to reports</Button></Link>}
+      />
+    )
+  }
+
+  const { report, member, comments } = reportQuery.data
   const scheduled = report.scheduled_count ?? 0
   const completed = report.completed_count ?? 0
   const score = report.calculated_score ?? 0
+  const status = report.status ?? 'submitted'
   const zeroEdgeCase = scheduled === 0
+  const activities = report.activities ?? []
 
   const submitComment = () => {
-    if (!comment.trim()) {
+    const message = comment.trim()
+    if (!message) {
       toast.error('Write a comment before sending.')
       return
     }
-    setComments((current) => [
-      ...current,
-      {
-        id: Date.now(),
-        author: user?.name ?? 'Administrator',
-        role: 'Administrator',
-        comment: comment.trim(),
-        created_at: new Date().toISOString(),
-      },
-    ])
-    setComment('')
-    toast.success('Comment added to the report.', 'Feedback sent')
-  }
-
-  const markReviewed = () => {
-    setReport((current) => ({ ...current, status: 'reviewed' }))
-    toast.success('Report marked as reviewed.')
+    addComment.mutate(message)
   }
 
   return (
@@ -81,25 +131,43 @@ export function ReportDetailsPage() {
             {formatDate(report.report_date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <ReportStatusBadge status={report.status} />
-            <span>Submitted by {report.user_name}</span>
+            <ReportStatusBadge status={status} />
+            <span>Submitted by {report.user_name ?? 'Member'}</span>
             <span>·</span>
-            <span>{formatDateTime(report.created_at ?? new Date().toISOString())}</span>
+            <span>{formatDateTime(report.submitted_at ?? report.created_at)}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {report.status !== 'reviewed' && (
-            <Button size="sm" onClick={markReviewed}>
+          {status !== 'reviewed' && (
+            <Button
+              size="sm"
+              onClick={() => updateStatus.mutate('reviewed')}
+              isLoading={updateStatus.isPending && updateStatus.variables === 'reviewed'}
+            >
               <CheckCircle2 className="h-4 w-4" />
               Mark reviewed
             </Button>
           )}
-          <Link to={`/admin/users/${member.id}`}>
-            <Button variant="outline" size="sm">
-              <UserIcon className="h-4 w-4" />
-              View member
+          {status !== 'flagged' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => updateStatus.mutate('flagged')}
+              isLoading={updateStatus.isPending && updateStatus.variables === 'flagged'}
+              className="text-amber-700"
+            >
+              <Flag className="h-4 w-4" />
+              Flag
             </Button>
-          </Link>
+          )}
+          {member && (
+            <Link to={`/admin/users/${member.id}`}>
+              <Button variant="outline" size="sm">
+                <UserIcon className="h-4 w-4" />
+                View member
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -175,33 +243,49 @@ export function ReportDetailsPage() {
               )}
 
               <div className="overflow-hidden rounded-xl border border-slate-100">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-[10px] uppercase tracking-wider text-slate-400">
-                    <tr>
-                      <th className="px-4 py-2.5 font-semibold">Activity</th>
-                      <th className="px-4 py-2.5 font-semibold">Time</th>
-                      <th className="px-4 py-2.5 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {[
-                      { title: 'Fajr prayer', time: '05:42', done: true },
-                      { title: 'Quran reading', time: '06:15', done: true },
-                      { title: 'Morning run', time: '07:15', done: completed > 2 },
-                      { title: 'Tafseer study', time: '16:00', done: completed > 3 },
-                    ].map((activity) => (
-                      <tr key={activity.title}>
-                        <td className="px-4 py-2.5 text-slate-700">{activity.title}</td>
-                        <td className="px-4 py-2.5 text-xs text-slate-500">{formatTime(activity.time)}</td>
-                        <td className="px-4 py-2.5">
-                          <Badge variant={activity.done ? 'success' : 'secondary'}>
-                            {activity.done ? 'Completed' : 'Not logged'}
-                          </Badge>
-                        </td>
+                {activities.length === 0 ? (
+                  <p className="p-4 text-sm text-slate-500">
+                    No activities were recorded with this report.
+                  </p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-[10px] uppercase tracking-wider text-slate-400">
+                      <tr>
+                        <th className="px-4 py-2.5 font-semibold">Activity</th>
+                        <th className="px-4 py-2.5 font-semibold">Time</th>
+                        <th className="px-4 py-2.5 font-semibold">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {activities.map((activity) => (
+                        <tr key={activity.id}>
+                          <td className="px-4 py-2.5 text-slate-700">{activity.activity_title}</td>
+                          <td className="px-4 py-2.5 text-xs text-slate-500">
+                            {formatTime(activity.start_time)}
+                            {activity.end_time ? ` – ${formatTime(activity.end_time)}` : ''}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <Badge
+                              variant={
+                                activity.activity_status === 'completed'
+                                  ? 'success'
+                                  : activity.activity_status === 'missed'
+                                    ? 'destructive'
+                                    : 'info'
+                              }
+                            >
+                              {activity.activity_status === 'completed'
+                                ? 'Completed'
+                                : activity.activity_status === 'missed'
+                                  ? 'Missed'
+                                  : 'Pending'}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -223,36 +307,40 @@ export function ReportDetailsPage() {
               </CircularProgress>
               <div className="mt-4 flex items-center gap-2">
                 <ScoreBadge score={score} />
-                <ReportStatusBadge status={report.status} />
+                <ReportStatusBadge status={status} />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Member</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Link to={`/admin/users/${member.id}`} className="flex items-center gap-3">
-                <Avatar name={member.name} size="lg" />
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-slate-800 hover:text-brand-700">{member.name}</p>
-                  <p className="truncate text-xs text-slate-500">{member.email}</p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-400">{member.group}</p>
+          {member && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Member</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Link to={`/admin/users/${member.id}`} className="flex items-center gap-3">
+                  <Avatar name={member.name} size="lg" />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-800 hover:text-brand-700">{member.name}</p>
+                    <p className="truncate text-xs text-slate-500">{member.email}</p>
+                    <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-400">
+                      {member.group ?? 'No group'}
+                    </p>
+                  </div>
+                </Link>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-xl bg-slate-50 p-2.5">
+                    <p className="text-lg font-bold text-slate-900">{member.activities ?? 0}</p>
+                    <p className="text-[10px] text-slate-500">Activities</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-2.5">
+                    <p className="text-lg font-bold text-slate-900">{member.progress ?? 0}%</p>
+                    <p className="text-[10px] text-slate-500">Progress</p>
+                  </div>
                 </div>
-              </Link>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-center">
-                <div className="rounded-xl bg-slate-50 p-2.5">
-                  <p className="text-lg font-bold text-slate-900">{member.activities ?? 0}</p>
-                  <p className="text-[10px] text-slate-500">Activities</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-2.5">
-                  <p className="text-lg font-bold text-slate-900">{member.progress ?? 0}%</p>
-                  <p className="text-[10px] text-slate-500">Progress</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -286,7 +374,13 @@ export function ReportDetailsPage() {
                   onChange={(event) => setComment(event.target.value)}
                   className="min-h-20"
                 />
-                <Button size="sm" className="w-full" onClick={submitComment}>
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={submitComment}
+                  isLoading={addComment.isPending}
+                  disabled={!comment.trim()}
+                >
                   <Send className="h-3.5 w-3.5" />
                   Add comment
                 </Button>

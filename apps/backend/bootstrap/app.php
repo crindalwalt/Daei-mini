@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\EnsureAccountIsNotSuspended;
 use App\Http\Middleware\RoleMiddleware;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->statefulApi();
         $middleware->alias([
             'role' => RoleMiddleware::class,
+            'not-suspended' => EnsureAccountIsNotSuspended::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

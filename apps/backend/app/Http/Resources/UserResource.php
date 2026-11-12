@@ -10,8 +10,8 @@ class UserResource extends JsonResource
     /**
      * Transform the resource into a safe public representation.
      *
-     * Password hashes, remember tokens, sanctum tokens, and internal
-     * bookkeeping timestamps are never exposed.
+     * Password hashes, remember tokens, sanctum tokens, and other sensitive
+     * credentials are never exposed.
      *
      * @return array<string, mixed>
      */
@@ -25,10 +25,13 @@ class UserResource extends JsonResource
             'uuid' => $this->uuid,
             'name' => $this->name,
             'email' => $this->email,
+            'bio' => $this->bio,
             'role' => $role,
             'roles' => $role !== null ? [$role] : [],
             'is_active' => (bool) $this->is_active,
             'email_verified' => $this->email_verified_at !== null,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
             'prayer_preferences' => $this->when(
                 $this->relationLoaded('prayerPreference'),
                 fn () => $preference === null ? null : [

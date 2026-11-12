@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
+import { cn } from '../../lib/utils'
 
 interface AppShellProps {
   variant: 'admin' | 'user'
@@ -19,6 +20,9 @@ export function AppShell({ variant }: AppShellProps) {
   })
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
+  const isAdminDashboard =
+    variant === 'admin' &&
+    (location.pathname === '/admin' || location.pathname === '/admin/dashboard')
 
   useEffect(() => {
     setMobileOpen(false)
@@ -33,9 +37,10 @@ export function AppShell({ variant }: AppShellProps) {
   }, [collapsed])
 
   return (
-    <div className="min-h-screen bg-[#f6f8f7]">
+    <div className={cn('min-h-screen bg-[#f6f8f7]', isAdminDashboard && 'admin-dashboard')}>
       <Sidebar
         variant={variant}
+        dashboard={isAdminDashboard}
         collapsed={collapsed}
         mobileOpen={mobileOpen}
         onToggleCollapse={() => setCollapsed((value) => !value)}
@@ -46,7 +51,11 @@ export function AppShell({ variant }: AppShellProps) {
         style={{ paddingLeft: undefined }}
       >
         <div className={collapsed ? 'lg:pl-[84px]' : 'lg:pl-[270px]'}>
-          <Topbar variant={variant} onMenu={() => setMobileOpen(true)} />
+          <Topbar
+            variant={variant}
+            dashboard={isAdminDashboard}
+            onMenu={() => setMobileOpen(true)}
+          />
           <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             <Outlet />
           </main>

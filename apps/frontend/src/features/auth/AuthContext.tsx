@@ -79,10 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Forgot password mutation
   const forgotPasswordMutation = useMutation({
     mutationFn: (payload: ForgotPasswordData) =>
-      apiClient.post<ApiEnvelope<{ email: string; reset_token?: string } | null>>(
-        '/api/v1/auth/forgot-password',
-        payload
-      ),
+      apiClient.post<ApiEnvelope<null>>('/api/v1/auth/forgot-password', payload),
   })
 
   // Reset password mutation
@@ -129,7 +126,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await forgotPasswordMutation.mutateAsync(payload)
     return {
       message: response.message,
-      reset_token: response.data?.reset_token,
     }
   }
 

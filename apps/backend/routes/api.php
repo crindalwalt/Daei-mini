@@ -1,6 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\V1\ActivityController;
+use App\Http\Controllers\Api\V1\Admin\ActivityController as AdminActivityController;
+use App\Http\Controllers\Api\V1\Admin\AnalyticsController as AdminAnalyticsController;
+use App\Http\Controllers\Api\V1\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Api\V1\Admin\GroupController as AdminGroupController;
+use App\Http\Controllers\Api\V1\Admin\ReportController as AdminReportController;
+use App\Http\Controllers\Api\V1\Admin\SearchController as AdminSearchController;
+use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BookmarkController;
 use App\Http\Controllers\Api\V1\DailyReportController;
@@ -53,10 +60,11 @@ Route::prefix('v1')->group(function () {
     Route::post('/tokens', [TokenController::class, 'store'])->middleware('throttle:tokens');
 
     // ── Authenticated Routes (Sanctum SPA cookie or Bearer Token) ─────────
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'not-suspended'])->group(function () {
         Route::prefix('auth')->group(function () {
             Route::get('/me', [AuthController::class, 'me']);
             Route::patch('/profile', [AuthController::class, 'updateProfile']);
+            Route::patch('/password', [AuthController::class, 'updatePassword']);
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::post('/email/verification-notification', [AuthController::class, 'resendEmailVerification'])
                 ->middleware('throttle:6,1');
@@ -208,6 +216,38 @@ Route::prefix('v1')->group(function () {
         Route::get('/sync/conflicts', [SyncController::class, 'conflicts']);
         Route::post('/sync/conflicts/{syncConflict}/resolve', [SyncController::class, 'resolve']);
         Route::get('/sync/operations', [SyncController::class, 'operations']);
+
+        // ── Administrator Dashboard & Management ──────────────────────────
+        Route::prefix('admin')->middleware('role:admin')->group(function () {
+            Route::get('/dashboard', [AdminDashboardController::class, 'index']);
+            Route::get('/search', [AdminSearchController::class, 'index']);
+            Route::get('/analytics', [AdminAnalyticsController::class, 'index']);
+            Route::get('/analytics/export', [AdminAnalyticsController::class, 'export']);
+
+            Route::get('/users/export', [AdminUserController::class, 'export']);
+            Route::get('/users', [AdminUserController::class, 'index']);
+            Route::post('/users', [AdminUserController::class, 'store']);
+            Route::get('/users/{user}', [AdminUserController::class, 'show']);
+            Route::match(['put', 'patch'], '/users/{user}', [AdminUserController::class, 'update']);
+            Route::post('/users/{user}/toggle-status', [AdminUserController::class, 'toggleStatus']);
+            Route::post('/users/{user}/toggle-suspension', [AdminUserController::class, 'toggleSuspension']);
+
+            Route::get('/groups/export', [AdminGroupController::class, 'export']);
+            Route::get('/groups', [AdminGroupController::class, 'index']);
+            Route::post('/groups', [AdminGroupController::class, 'store']);
+            Route::get('/groups/{group}', [AdminGroupController::class, 'show']);
+            Route::match(['put', 'patch'], '/groups/{group}', [AdminGroupController::class, 'update']);
+
+            Route::get('/reports/export', [AdminReportController::class, 'export']);
+            Route::get('/reports', [AdminReportController::class, 'index']);
+            Route::get('/reports/{report}', [AdminReportController::class, 'show']);
+            Route::patch('/reports/{report}/status', [AdminReportController::class, 'updateStatus']);
+            Route::post('/reports/{report}/comments', [AdminReportController::class, 'storeComment']);
+
+            Route::get('/activities/export', [AdminActivityController::class, 'export']);
+            Route::get('/activities', [AdminActivityController::class, 'index']);
+            Route::post('/activities/{activity}/complete', [AdminActivityController::class, 'complete']);
+        });
     });
 });
 

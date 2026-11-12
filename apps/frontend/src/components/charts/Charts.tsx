@@ -6,6 +6,7 @@ interface BarChartProps {
   height?: number
   className?: string
   showLegend?: boolean
+  showYAxis?: boolean
   valueLabel?: string
   secondaryLabel?: string
 }
@@ -15,10 +16,13 @@ export function BarChart({
   height = 220,
   className,
   showLegend = false,
+  showYAxis = false,
   valueLabel = 'Completed',
   secondaryLabel = 'Missed',
 }: BarChartProps) {
   const max = Math.max(1, ...data.flatMap((point) => [point.value, point.secondary ?? 0]))
+  const ticks = [max, Math.round(max * 0.75), Math.round(max * 0.5), Math.round(max * 0.25), 0]
+  const gridLines = showYAxis ? ticks : [0, 1, 2, 3]
 
   return (
     <div className={cn('w-full', className)}>
@@ -32,45 +36,60 @@ export function BarChart({
           </span>
         </div>
       )}
-      <div className="relative" style={{ height }}>
-        <div className="absolute inset-0 flex flex-col justify-between">
-          {[0, 1, 2, 3].map((line) => (
-            <div key={line} className="border-t border-dashed border-slate-100" />
-          ))}
-        </div>
-        <div className="relative flex h-full items-end gap-2 sm:gap-4">
-          {data.map((point) => {
-            const primary = Math.max(2, (point.value / max) * 100)
-            const secondary =
-              typeof point.secondary === 'number'
-                ? Math.max(2, (point.secondary / max) * 100)
-                : null
-            return (
-              <div key={point.label} className="group flex h-full flex-1 flex-col justify-end">
-                <div className="relative flex flex-1 items-end justify-center gap-1">
-                  <div
-                    className="w-full max-w-5 rounded-t-md bg-brand-600/90 transition-all duration-500 group-hover:bg-brand-600 sm:max-w-7"
-                    style={{ height: `${primary}%` }}
-                    title={`${point.label}: ${point.value}`}
-                  />
-                  {secondary !== null && (
+      <div className="flex w-full gap-2 sm:gap-3">
+        {showYAxis && (
+          <div className="relative w-6 shrink-0" style={{ height }}>
+            {ticks.map((tick, index) => (
+              <span
+                key={`${tick}-${index}`}
+                className="absolute right-0 -translate-y-1/2 text-[10px] font-medium tabular-nums text-slate-400"
+                style={{ top: `${(index / (ticks.length - 1)) * 100}%` }}
+              >
+                {tick}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="relative min-w-0 flex-1" style={{ height }}>
+          <div className="absolute inset-0 flex flex-col justify-between">
+            {gridLines.map((line, index) => (
+              <div key={`${line}-${index}`} className="border-t border-dashed border-slate-100" />
+            ))}
+          </div>
+          <div className="relative flex h-full items-end gap-2 sm:gap-4">
+            {data.map((point) => {
+              const primary = Math.max(2, (point.value / max) * 100)
+              const secondary =
+                typeof point.secondary === 'number'
+                  ? Math.max(2, (point.secondary / max) * 100)
+                  : null
+              return (
+                <div key={point.label} className="group flex h-full flex-1 flex-col justify-end">
+                  <div className="relative flex flex-1 items-end justify-center gap-1">
                     <div
-                      className="w-full max-w-5 rounded-t-md bg-brand-200 transition-all duration-500 group-hover:bg-brand-300 sm:max-w-7"
-                      style={{ height: `${secondary}%` }}
-                      title={`${point.label}: ${point.secondary}`}
+                      className="w-full max-w-5 rounded-t-md bg-brand-600/90 transition-all duration-500 group-hover:bg-brand-600 sm:max-w-7"
+                      style={{ height: `${primary}%` }}
+                      title={`${point.label}: ${point.value}`}
                     />
-                  )}
-                  <div className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
-                    {point.value}
-                    {typeof point.secondary === 'number' ? ` / ${point.secondary}` : ''}
+                    {secondary !== null && (
+                      <div
+                        className="w-full max-w-5 rounded-t-md bg-brand-200 transition-all duration-500 group-hover:bg-brand-300 sm:max-w-7"
+                        style={{ height: `${secondary}%` }}
+                        title={`${point.label}: ${point.secondary}`}
+                      />
+                    )}
+                    <div className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 rounded-md bg-slate-900 px-2 py-1 text-[10px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                      {point.value}
+                      {typeof point.secondary === 'number' ? ` / ${point.secondary}` : ''}
+                    </div>
                   </div>
+                  <span className="mt-2 truncate text-center text-[10px] font-medium text-slate-500 sm:text-xs">
+                    {point.label}
+                  </span>
                 </div>
-                <span className="mt-2 truncate text-center text-[10px] font-medium text-slate-500 sm:text-xs">
-                  {point.label}
-                </span>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>

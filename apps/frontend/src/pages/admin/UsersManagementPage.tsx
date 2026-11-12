@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronLeft,
   ChevronRight,
@@ -28,107 +29,165 @@ import { Progress } from '../../components/ui/Progress'
 import { Modal } from '../../components/ui/Modal'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/Table'
 import { useToast } from '../../components/ui/toast/ToastProvider'
-import { adminUsers } from '../../lib/mockData'
+import { adminApi, type AdminUserInput } from '../../lib/api/admin'
+import { ApiError } from '../../lib/api/client'
+import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import { formatDate } from '../../lib/format'
-import type { AdminUser, UserStatus } from '../../types/domain'
+import type { AdminUser } from '../../types/domain'
 
 const addUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
   role: z.enum(['user', 'admin']),
-  group: z.string().min(1, 'Select a group'),
+  group_id: z.string(),
   status: z.enum(['active', 'pending', 'inactive']),
+  send_invitation: z.boolean(),
 })
 
 type AddUserValues = z.infer<typeof addUserSchema>
 
-const groupOptions = [
-  { value: 'Morning Circle', label: 'Morning Circle' },
-  { value: 'Evening Study', label: 'Evening Study' },
-  { value: 'Health & Fitness', label: 'Health & Fitness' },
-  { value: 'Hifz Programme', label: 'Hifz Programme' },
-  { value: "Sisters' Circle", label: "Sisters' Circle" },
-]
-
 const PAGE_SIZE = 8
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
 
 export function UsersManagementPage() {
   const toast = useToast()
-  const [users, setUsers] = useState<AdminUser[]>(adminUsers)
+  const queryClient = useQueryClient()
+
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [role, setRole] = useState('all')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
+    setError,
+    formState: { errors },
   } = useForm<AddUserValues>({
     resolver: zodResolver(addUserSchema),
-    defaultValues: { name: '', email: '', role: 'user', group: groupOptions[0].value, status: 'pending' },
+    defaultValues: {
+      name: '',
+      email: '',
+      role: 'user',
+      group_id: '',
+      status: 'pending',
+      send_invitation: true,
+    },
   })
 
-  const filtered = useMemo(() => {
-    return users.filter((user) => {
-      const matchesSearch =
-        !search ||
-        user.name.toLowerCase().includes(search.toLowerCase()) ||
-        user.email.toLowerCase().includes(search.toLowerCase()) ||
-        (user.group ?? '').toLowerCase().includes(search.toLowerCase())
-      const matchesRole = role === 'all' || user.role === role
-      const matchesStatus = status === 'all' || user.status === status
-      return matchesSearch && matchesRole && matchesStatus
-    })
-  }, [users, search, role, status])
+  const usersQuery = useQuery({
+    queryKey: ['admin', 'users', debouncedSearch, role, status, page],
+    queryFn: () =>
+      adminApi.users.list({
+        q: debouncedSearch || undefined,
+        role: role === 'all' ? undefined : role,
+        status: status === 'all' ? undefined : status,
+        page,
+        per_page: PAGE_SIZE,
+      }),
+    staleTime: 20_000,
+  })
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const currentPage = Math.min(page, totalPages)
-  const pageUsers = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const groupsQuery = useQuery({
+    queryKey: ['admin', 'groups', 'options'],
+    queryFn: () => adminApi.groups.list({ per_page: 100 }),
+    staleTime: 60_000,
+  })
 
-  const counts = useMemo(
-    () => ({
-      total: users.length,
-      active: users.filter((user) => user.status === 'active').length,
-      pending: users.filter((user) => user.status === 'pending').length,
-      admins: users.filter((user) => user.role === 'admin').length,
-    }),
-    [users]
-  )
+  const users: AdminUser[] = usersQuery.data?.items ?? []
+  const stats = usersQuery.data?.stats ?? { total: 0, active: 0, pending: 0, admins: 0 }
+  const meta = usersQuery.data?.meta
+  const currentPage = meta?.current_page ?? page
+  const totalPages = Math.max(1, meta?.last_page ?? 1)
+  const groupOptions = groupsQuery.data?.items ?? []
 
-  const onSubmit = async (values: AddUserValues) => {
-    const newUser: AdminUser = {
-      id: Date.now(),
-      name: values.name,
-      email: values.email,
-      role: values.role,
-      status: values.status as UserStatus,
-      group: values.group,
-      joined_at: new Date().toISOString().slice(0, 10),
-      last_active: undefined,
-      activities: 0,
-      reports: 0,
-      progress: 0,
+  const createUser = useMutation({
+    mutationFn: (values: AddUserValues) => {
+      const payload: AdminUserInput = {
+        name: values.name.trim(),
+        email: values.email.trim(),
+        role: values.role,
+        group_id: values.group_id ? Number(values.group_id) : null,
+        status: values.status,
+        send_invitation: values.send_invitation,
+      }
+      return adminApi.users.create(payload)
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'groups'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })
+      setModalOpen(false)
+      reset()
+      if (result.invitation_sent) {
+        toast.success(
+          `${result.user.name} has been added and invited by email.`,
+          'User added'
+        )
+      } else {
+        toast.info(
+          `${result.user.name} was added, but the invitation email could not be sent.`,
+          'User added'
+        )
+      }
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.errors) {
+        Object.entries(error.errors).forEach(([field, messages]) => {
+          if (field === 'name' || field === 'email' || field === 'role' || field === 'group_id' || field === 'status') {
+            setError(field, { message: messages[0] })
+          }
+        })
+      }
+      toast.error(errorMessage(error, 'Could not create the user.'), 'Unable to add user')
+    },
+  })
+
+  const toggleStatus = useMutation({
+    mutationFn: (user: AdminUser) => {
+      if (user.status === 'pending') {
+        return adminApi.users.update(user.id, { status: 'active' })
+      }
+      return adminApi.users.toggleStatus(user.id)
+    },
+    onSuccess: (user) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })
+      toast.success(`${user.name} is now ${user.status}.`)
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Could not update the account.'), 'Update failed')
+    },
+  })
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      await adminApi.users.export({
+        q: debouncedSearch || undefined,
+        role: role === 'all' ? undefined : role,
+        status: status === 'all' ? undefined : status,
+      })
+      toast.success('The users CSV has been downloaded.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not export users.'), 'Export failed')
+    } finally {
+      setExporting(false)
     }
-    // Simulate a short network round-trip so the loading state is visible.
-    await new Promise((resolve) => setTimeout(resolve, 350))
-    setUsers((current) => [newUser, ...current])
-    setModalOpen(false)
-    reset()
-    toast.success(`${values.name} has been invited to the programme.`, 'User added')
   }
 
-  const toggleStatus = (user: AdminUser) => {
-    const nextStatus: UserStatus = user.status === 'active' ? 'inactive' : 'active'
-    setUsers((current) =>
-      current.map((item) => (item.id === user.id ? { ...item, status: nextStatus } : item))
-    )
-    toast.info(
-      `${user.name} is now ${nextStatus}.`,
-      nextStatus === 'active' ? 'Account activated' : 'Account deactivated'
-    )
+  const clearFilters = () => {
+    setSearch('')
+    setRole('all')
+    setStatus('all')
+    setPage(1)
   }
 
   return (
@@ -139,7 +198,7 @@ export function UsersManagementPage() {
         description="Invite members, assign groups and keep accounts up to date."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => toast.info('Export started. The CSV will download shortly.')}>
+            <Button variant="outline" size="sm" onClick={handleExport} isLoading={exporting}>
               <Download className="h-4 w-4" />
               Export
             </Button>
@@ -152,10 +211,10 @@ export function UsersManagementPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total users" value={counts.total} icon={Users} hint="across all groups" />
-        <StatCard label="Active" value={counts.active} icon={UserCheck} accent="emerald" hint="signed in this month" />
-        <StatCard label="Pending" value={counts.pending} icon={UserPlus} accent="amber" hint="awaiting activation" />
-        <StatCard label="Administrators" value={counts.admins} icon={ShieldCheck} accent="sky" hint="full access" />
+        <StatCard label="Total users" value={stats.total} icon={Users} hint="across all groups" />
+        <StatCard label="Active" value={stats.active} icon={UserCheck} accent="emerald" hint="signed in this month" />
+        <StatCard label="Pending" value={stats.pending} icon={UserPlus} accent="amber" hint="awaiting activation" />
+        <StatCard label="Administrators" value={stats.admins} icon={ShieldCheck} accent="sky" hint="full access" />
       </div>
 
       <Card>
@@ -205,21 +264,22 @@ export function UsersManagementPage() {
             </div>
           </div>
 
-          {pageUsers.length === 0 ? (
+          {usersQuery.isLoading ? (
+            <div className="py-12 text-center text-sm text-slate-500">Loading members…</div>
+          ) : usersQuery.isError ? (
+            <EmptyState
+              icon={Users}
+              title="Could not load members"
+              description={errorMessage(usersQuery.error, 'The members list is unavailable right now.')}
+              action={<Button variant="outline" size="sm" onClick={() => void usersQuery.refetch()}>Try again</Button>}
+            />
+          ) : users.length === 0 ? (
             <EmptyState
               icon={Users}
               title="No users match your filters"
               description="Try a different search term or clear the filters."
               action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSearch('')
-                    setRole('all')
-                    setStatus('all')
-                  }}
-                >
+                <Button variant="outline" size="sm" onClick={clearFilters}>
                   Clear filters
                 </Button>
               }
@@ -238,7 +298,7 @@ export function UsersManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageUsers.map((user) => (
+                {users.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell>
                       <Link to={`/admin/users/${user.id}`} className="flex items-center gap-3">
@@ -279,10 +339,15 @@ export function UsersManagementPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => toggleStatus(user)}
-                          className={user.status === 'active' ? 'text-amber-600' : 'text-emerald-600'}
+                          disabled={toggleStatus.isPending && toggleStatus.variables?.id === user.id}
+                          onClick={() => toggleStatus.mutate(user)}
+                          className={
+                            (user.is_active ?? user.status === 'active')
+                              ? 'text-amber-600'
+                              : 'text-emerald-600'
+                          }
                         >
-                          {user.status === 'active' ? 'Deactivate' : 'Activate'}
+                          {(user.is_active ?? user.status === 'active') ? 'Deactivate' : 'Activate'}
                         </Button>
                       </div>
                     </TableCell>
@@ -294,14 +359,14 @@ export function UsersManagementPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs text-slate-500">
             <p>
-              Showing {pageUsers.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
-              {(currentPage - 1) * PAGE_SIZE + pageUsers.length} of {filtered.length} users
+              Showing {users.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}–
+              {(currentPage - 1) * PAGE_SIZE + users.length} of {meta?.total ?? users.length} users
             </p>
             <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="icon"
-                disabled={currentPage <= 1}
+                disabled={currentPage <= 1 || usersQuery.isFetching}
                 onClick={() => setPage((value) => Math.max(1, value - 1))}
                 aria-label="Previous page"
               >
@@ -313,7 +378,7 @@ export function UsersManagementPage() {
               <Button
                 variant="outline"
                 size="icon"
-                disabled={currentPage >= totalPages}
+                disabled={currentPage >= totalPages || usersQuery.isFetching}
                 onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                 aria-label="Next page"
               >
@@ -326,22 +391,35 @@ export function UsersManagementPage() {
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false)
+          reset()
+        }}
         title="Invite a new user"
         description="They will receive an email invitation to set up their account."
         footer={
           <>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setModalOpen(false)
+                reset()
+              }}
+            >
               Cancel
             </Button>
-            <Button type="submit" form="add-user-form" isLoading={isSubmitting}>
+            <Button type="submit" form="add-user-form" isLoading={createUser.isPending}>
               <Mail className="h-4 w-4" />
               Send invitation
             </Button>
           </>
         }
       >
-        <form id="add-user-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form
+          id="add-user-form"
+          onSubmit={handleSubmit((values) => createUser.mutate(values))}
+          className="space-y-4"
+        >
           <Input
             label="Full name"
             placeholder="Aisha Rahman"
@@ -360,16 +438,31 @@ export function UsersManagementPage() {
               <option value="user">Member</option>
               <option value="admin">Administrator</option>
             </Select>
-            <Select label="Group" error={errors.group?.message} options={groupOptions} {...register('group')} />
+            <Select label="Group" error={errors.group_id?.message} {...register('group_id')}>
+              <option value="">No group</option>
+              {groupOptions.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </Select>
           </div>
           <Select label="Initial status" error={errors.status?.message} {...register('status')}>
             <option value="pending">Pending invitation</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </Select>
-          <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-            Invitations expire after 7 days. The member will appear as pending until they accept.
-          </p>
+          <label className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              {...register('send_invitation')}
+            />
+            <span>
+              Email a one-time invitation code. It expires after 15 minutes and the member appears as
+              pending until they set a password.
+            </span>
+          </label>
         </form>
       </Modal>
     </div>

@@ -13,6 +13,7 @@ export interface User {
   uuid?: string
   name: string
   email: string
+  bio?: string | null
   email_verified?: boolean
   email_verified_at?: string | null
   role?: UserRole
@@ -39,7 +40,6 @@ export interface ForgotPasswordData {
 
 export interface ForgotPasswordResponse {
   message: string
-  reset_token?: string
 }
 
 export interface ResetPasswordData {
@@ -75,9 +75,16 @@ export interface AuthResponse {
 export interface UpdateProfileData {
   name?: string
   email?: string
+  bio?: string | null
   timezone?: string
   calculation_method?: string
   latitude?: number | null
   longitude?: number | null
   notifications_enabled?: boolean
+}
+
+export interface UpdatePasswordData {
+  current_password: string
+  password: string
+  password_confirmation: string
 }

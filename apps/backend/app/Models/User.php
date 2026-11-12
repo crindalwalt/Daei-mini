@@ -32,8 +32,12 @@ class User extends Authenticatable implements MustVerifyEmail
         'name',
         'email',
         'password',
+        'bio',
         'role',
         'is_active',
+        'invited_at',
+        'invitation_accepted_at',
+        'suspended_at',
     ];
 
     /**
@@ -49,6 +53,9 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'invited_at' => 'datetime',
+        'invitation_accepted_at' => 'datetime',
+        'suspended_at' => 'datetime',
         'password' => 'hashed',
         'role' => UserRole::class,
         'is_active' => 'boolean',

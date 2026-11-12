@@ -21,7 +21,6 @@ export function ForgotPasswordPage() {
   const { forgotPassword } = useAuth()
   const [serverError, setServerError] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
-  const [resetToken, setResetToken] = useState<string | null>(null)
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null)
 
   const {
@@ -36,12 +35,10 @@ export function ForgotPasswordPage() {
   const onSubmit = async (values: ForgotPasswordFormValues) => {
     setServerError(null)
     setSubmitted(false)
-    setResetToken(null)
     setSubmittedEmail(null)
 
     try {
-      const response = await forgotPassword({ email: values.email })
-      setResetToken(response?.reset_token ?? null)
+      await forgotPassword({ email: values.email })
       setSubmittedEmail(values.email)
       setSubmitted(true)
     } catch (err) {
@@ -54,9 +51,7 @@ export function ForgotPasswordPage() {
   }
 
   const isSent = submitted && !serverError && submittedEmail !== null
-  const resetPath = `/reset-password?email=${encodeURIComponent(submittedEmail ?? '')}${
-    resetToken ? `&token=${encodeURIComponent(resetToken)}` : ''
-  }`
+  const resetPath = `/reset-password?email=${encodeURIComponent(submittedEmail ?? '')}`
 
   return (
     <AuthLayout
@@ -95,17 +90,6 @@ export function ForgotPasswordPage() {
             The code expires in 15 minutes. Check your spam folder if it does not arrive.
           </Alert>
 
-          {resetToken && import.meta.env.MODE !== 'production' && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Development OTP code
-              </p>
-              <code className="mt-2 block rounded-lg bg-slate-900 px-3 py-2.5 text-center text-lg font-semibold tracking-[0.35em] text-slate-100">
-                {resetToken}
-              </code>
-            </div>
-          )}
-
           <Link to={resetPath}>
             <Button className="w-full">
               <MailCheck className="h-4 w-4" />
@@ -118,7 +102,6 @@ export function ForgotPasswordPage() {
             onClick={() => {
               setSubmitted(false)
               setSubmittedEmail(null)
-              setResetToken(null)
             }}
             className="w-full text-center text-xs font-semibold text-slate-500 hover:text-brand-700"
           >

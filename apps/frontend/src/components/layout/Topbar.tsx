@@ -1,32 +1,49 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Bell,
   ChevronDown,
+  FileText,
   LogOut,
   Menu,
   Search,
   Settings,
   ShieldCheck,
   User as UserIcon,
+  Users,
+  UsersRound,
+  type LucideIcon,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useAuth } from '../../features/auth/useAuth'
+import { adminApi } from '../../lib/api/admin'
 import { useToast } from '../ui/toast/ToastProvider'
 import { Avatar } from '../ui/Avatar'
 import { adminNav, userNav } from './navConfig'
 
 interface TopbarProps {
   variant: 'admin' | 'user'
+  dashboard?: boolean
   onMenu: () => void
 }
 
-export function Topbar({ variant, onMenu }: TopbarProps) {
+interface SearchResult {
+  key: string
+  label: string
+  description: string
+  to: string
+  icon: LucideIcon
+  section: string
+}
+
+export function Topbar({ variant, dashboard = false, onMenu }: TopbarProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -34,9 +51,65 @@ export function Topbar({ variant, onMenu }: TopbarProps) {
   const links = sections.flatMap((section) =>
     section.items.map((item) => ({ ...item, section: section.title }))
   )
-  const results = query
-    ? links.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())).slice(0, 5)
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedQuery(query.trim()), 250)
+    return () => window.clearTimeout(timeout)
+  }, [query])
+
+  const adminSearchQuery = useQuery({
+    queryKey: ['admin', 'search', debouncedQuery],
+    queryFn: () => adminApi.search(debouncedQuery),
+    enabled: variant === 'admin' && debouncedQuery.length >= 2,
+    staleTime: 30_000,
+    retry: 0,
+  })
+
+  const navResults: SearchResult[] = query
+    ? links
+        .filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+        .slice(0, 3)
+        .map((item) => ({
+          key: `nav-${item.to}`,
+          label: item.label,
+          description: item.section,
+          to: item.to,
+          icon: item.icon,
+          section: 'Page',
+        }))
     : []
+
+  const remoteResults: SearchResult[] =
+    variant === 'admin' && adminSearchQuery.data
+      ? [
+          ...adminSearchQuery.data.users.map((member) => ({
+            key: `user-${member.id}`,
+            label: member.name,
+            description: member.email,
+            to: `/admin/users/${member.id}`,
+            icon: Users,
+            section: 'Member',
+          })),
+          ...adminSearchQuery.data.groups.map((group) => ({
+            key: `group-${group.id}`,
+            label: group.name,
+            description: group.leader ? `Led by ${group.leader}` : 'Group',
+            to: `/admin/groups/${group.id}`,
+            icon: UsersRound,
+            section: 'Group',
+          })),
+          ...adminSearchQuery.data.reports.map((report) => ({
+            key: `report-${report.id}`,
+            label: `Report · ${report.user_name ?? 'Member'}`,
+            description: report.report_date,
+            to: `/admin/reports/${report.id}`,
+            icon: FileText,
+            section: 'Report',
+          })),
+        ]
+      : []
+
+  const results = [...remoteResults, ...navResults].slice(0, 8)
 
   useEffect(() => {
     function handleClick(event: MouseEvent) {
@@ -60,7 +133,12 @@ export function Topbar({ variant, onMenu }: TopbarProps) {
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
+    <header
+      className={cn(
+        'sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-md',
+        dashboard && 'admin-topbar-dashboard'
+      )}
+    >
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
         <button
           type="button"
@@ -92,7 +170,7 @@ export function Topbar({ variant, onMenu }: TopbarProps) {
                 const Icon = item.icon
                 return (
                   <button
-                    key={item.to}
+                    key={item.key}
                     type="button"
                     onClick={() => {
                       navigate(item.to)
@@ -101,8 +179,13 @@ export function Topbar({ variant, onMenu }: TopbarProps) {
                     }}
                     className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50"
                   >
-                    <Icon className="h-4 w-4 text-slate-400" />
-                    <span className="flex-1">{item.label}</span>
+                    <Icon className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-slate-700">{item.label}</span>
+                      <span className="block truncate text-[11px] text-slate-400">
+                        {item.description}
+                      </span>
+                    </span>
                     <span className="text-[10px] uppercase tracking-wide text-slate-400">
                       {item.section}
                     </span>
@@ -114,10 +197,12 @@ export function Topbar({ variant, onMenu }: TopbarProps) {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2.5">
-          <span className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 md:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            All systems operational
-          </span>
+          {!dashboard && (
+            <span className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 md:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              All systems operational
+            </span>
+          )}
 
           <Link
             to={variant === 'admin' ? '/admin/notifications' : '/app/notifications'}
