@@ -61,7 +61,7 @@ export function ForgotPasswordPage() {
       footer={
         <>
           Remembered your password?{' '}
-          <Link to="/login" className="font-semibold text-brand-700 hover:underline">
+          <Link to="/login" className="font-semibold text-[#106030] hover:underline">
             Back to sign in
           </Link>
         </>
@@ -74,14 +74,14 @@ export function ForgotPasswordPage() {
       )}
 
       {isSent ? (
-        <div className="space-y-4 text-sm text-slate-600">
+        <div className="space-y-4 text-sm text-[#77817B]">
           <div className="flex flex-col items-center text-center">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
-              <MailCheck className="h-6 w-6" />
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#E7F1E4] text-[#106030]">
+              <MailCheck className="h-7 w-7" />
             </div>
-            <p className="font-semibold text-slate-900">Check your inbox</p>
-            <p className="mt-1 text-slate-500">
-              If an account exists for <span className="font-semibold">{submittedEmail}</span>, a
+            <p className="font-serif text-lg font-bold text-[#145C3A]">Check your inbox</p>
+            <p className="mt-1 text-sm text-[#77817B]">
+              If an account exists for <span className="font-semibold text-[#1F2E28]">{submittedEmail}</span>, a
               one-time code has been sent.
             </p>
           </div>
@@ -90,8 +90,8 @@ export function ForgotPasswordPage() {
             The code expires in 15 minutes. Check your spam folder if it does not arrive.
           </Alert>
 
-          <Link to={resetPath}>
-            <Button className="w-full">
+          <Link to={resetPath} className="block">
+            <Button className="w-full bg-[#106030] hover:bg-[#145C3A] text-white rounded-xl shadow-xs" size="lg">
               <MailCheck className="h-4 w-4" />
               Enter the one-time code
             </Button>
@@ -103,7 +103,7 @@ export function ForgotPasswordPage() {
               setSubmitted(false)
               setSubmittedEmail(null)
             }}
-            className="w-full text-center text-xs font-semibold text-slate-500 hover:text-brand-700"
+            className="w-full text-center text-xs font-semibold text-[#77817B] hover:text-[#106030] transition-colors cursor-pointer"
           >
             Use a different email address
           </button>
@@ -119,14 +119,19 @@ export function ForgotPasswordPage() {
             {...register('email')}
           />
 
-          <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
+          <Button
+            type="submit"
+            className="w-full bg-[#106030] hover:bg-[#145C3A] text-white rounded-xl shadow-xs"
+            size="lg"
+            isLoading={isSubmitting}
+          >
             <MailCheck className="h-4 w-4" />
             Send one-time code
           </Button>
 
           <Link
             to="/login"
-            className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-brand-700"
+            className="flex items-center justify-center gap-1.5 text-xs font-semibold text-[#77817B] hover:text-[#106030] transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to sign in

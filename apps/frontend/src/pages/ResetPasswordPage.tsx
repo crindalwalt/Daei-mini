@@ -81,22 +81,26 @@ export function ResetPasswordPage() {
         subtitle="Your new password is ready to use."
         badge="All done"
         footer={
-          <Link to="/login" className="font-semibold text-brand-700 hover:underline">
+          <Link to="/login" className="font-semibold text-[#106030] hover:underline">
             Continue to sign in
           </Link>
         }
       >
         <div className="space-y-4 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#E7F1E4] text-[#106030]">
             <CheckCircle2 className="h-7 w-7" />
           </div>
           <div>
-            <p className="font-semibold text-slate-900">Password updated successfully</p>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="font-serif text-lg font-bold text-[#145C3A]">Password updated successfully</p>
+            <p className="mt-1 text-sm text-[#77817B]">
               You can now sign in with your new password.
             </p>
           </div>
-          <Button className="w-full" onClick={() => navigate('/login')}>
+          <Button
+            className="w-full bg-[#106030] hover:bg-[#145C3A] text-white rounded-xl shadow-xs"
+            size="lg"
+            onClick={() => navigate('/login')}
+          >
             <KeyRound className="h-4 w-4" />
             Back to sign in
           </Button>
@@ -113,7 +117,7 @@ export function ResetPasswordPage() {
       footer={
         <>
           Remembered it?{' '}
-          <Link to="/login" className="font-semibold text-brand-700 hover:underline">
+          <Link to="/login" className="font-semibold text-[#106030] hover:underline">
             Sign in instead
           </Link>
         </>
@@ -171,10 +175,25 @@ export function ResetPasswordPage() {
           placeholder="Re-enter new password"
           autoComplete="new-password"
           error={errors.password_confirmation?.message}
+          rightSlot={
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          }
           {...register('password_confirmation')}
         />
 
-        <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
+        <Button
+          type="submit"
+          className="w-full bg-[#106030] hover:bg-[#145C3A] text-white rounded-xl shadow-xs"
+          size="lg"
+          isLoading={isSubmitting}
+        >
           <KeyRound className="h-4 w-4" />
           Reset Password
         </Button>

@@ -80,13 +80,13 @@ export function RegisterPage() {
 
   return (
     <AuthLayout
-      title="Create your account"
-      subtitle="Start with a simple daily plan and build from there."
-      badge="Free to get started"
+      title="Create Your Account"
+      subtitle="Start with a simple daily plan and build consistent habits."
+      badge="Get Started"
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-brand-700 hover:underline">
+          <Link to="/login" className="font-semibold text-[#106030] hover:underline">
             Sign in
           </Link>
         </>
@@ -102,7 +102,7 @@ export function RegisterPage() {
         <Input
           label="Full name"
           type="text"
-          placeholder="Aisha Rahman"
+          placeholder="Hamza Khan"
           autoComplete="name"
           error={errors.name?.message}
           {...register('name')}
@@ -146,22 +146,26 @@ export function RegisterPage() {
           {...register('password_confirmation')}
         />
 
-        <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
+        <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500 cursor-pointer">
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+            className="mt-0.5 h-4 w-4 rounded border-[#E0E0D0] text-[#106030] focus:ring-[#106030]"
             {...register('accept_terms')}
           />
           <span>
-            I agree to the community guidelines and understand that my daily reports are visible to
-            my group administrators.
+            I agree to the community guidelines and commit to respectful, consistent daily growth.
           </span>
         </label>
         {errors.accept_terms && (
           <p className="text-xs font-medium text-red-600">{errors.accept_terms.message}</p>
         )}
 
-        <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
+        <Button
+          type="submit"
+          className="w-full bg-[#106030] hover:bg-[#145C3A] text-white rounded-xl shadow-xs"
+          size="lg"
+          isLoading={isSubmitting}
+        >
           <UserPlus className="h-4 w-4" />
           Create Account
         </Button>

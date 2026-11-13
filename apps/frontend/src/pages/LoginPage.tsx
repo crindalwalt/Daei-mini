@@ -65,18 +65,18 @@ export function LoginPage({ adminMode = false }: LoginPageProps) {
 
   return (
     <AuthLayout
-      title={adminMode ? 'Sign in to the admin panel' : 'Welcome back'}
+      title={adminMode ? 'Sign in to Admin Panel' : 'Welcome Back'}
       subtitle={
         adminMode
-          ? 'Access user management, group progress and daily reports.'
+          ? 'Access your organization’s users, activities and daily reports.'
           : 'Sign in to continue your daily plan, habits and reflections.'
       }
-      badge={adminMode ? 'Administrator access' : 'Member access'}
+      badge={adminMode ? 'Administrator Access' : 'Daily Deen'}
       adminMode={adminMode}
       footer={
         <>
           Don&apos;t have an account?{' '}
-          <Link to="/register" className="font-semibold text-brand-700 hover:underline">
+          <Link to="/register" className="font-semibold text-[#106030] hover:underline">
             Create an account
           </Link>
         </>
@@ -114,7 +114,7 @@ export function LoginPage({ adminMode = false }: LoginPageProps) {
             labelAction={
               <Link
                 to="/forgot-password"
-                className="text-xs font-semibold text-brand-700 hover:underline"
+                className="text-xs font-semibold text-[#106030] hover:underline"
               >
                 Forgot password?
               </Link>
@@ -132,16 +132,21 @@ export function LoginPage({ adminMode = false }: LoginPageProps) {
             {...register('password')}
           />
 
-          <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          <label className="flex items-center gap-2 text-xs font-medium text-slate-500 cursor-pointer">
             <input
               type="checkbox"
               defaultChecked
-              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+              className="h-4 w-4 rounded border-[#E0E0D0] text-[#106030] focus:ring-[#106030]"
             />
             Keep me signed in on this device
           </label>
 
-          <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
+          <Button
+            type="submit"
+            className="w-full bg-[#106030] hover:bg-[#145C3A] text-white rounded-xl shadow-xs"
+            size="lg"
+            isLoading={isSubmitting}
+          >
             <KeyRound className="h-4 w-4" />
             Sign In
             <ArrowRight className="h-4 w-4" />
@@ -150,10 +155,10 @@ export function LoginPage({ adminMode = false }: LoginPageProps) {
 
         <div className="relative py-1">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-100" />
+            <div className="w-full border-t border-[#E8E7DD]" />
           </div>
           <div className="relative flex justify-center">
-            <span className="bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            <span className="bg-white px-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#77817B]">
               Demo access
             </span>
           </div>
@@ -164,9 +169,9 @@ export function LoginPage({ adminMode = false }: LoginPageProps) {
           variant="outline"
           size="sm"
           onClick={fillDemoCredentials}
-          className="w-full border-slate-200 text-xs text-slate-600"
+          className="w-full border-[#E0E0D0] bg-[#FAFBF8] text-xs font-semibold text-[#26332E] hover:bg-[#F0F2EB]"
         >
-          <Sparkles className="h-3.5 w-3.5 text-brand-600" />
+          <Sparkles className="h-3.5 w-3.5 text-[#106030]" />
           Fill Demo Credentials (admin@thinkcode.dev)
         </Button>
       </div>
