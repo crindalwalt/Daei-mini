@@ -3,10 +3,11 @@ import { cn } from '../../lib/utils'
 interface LogoProps {
   compact?: boolean
   variant?: 'light' | 'dark'
+  subtitle?: string
   className?: string
 }
 
-export function Logo({ compact = false, variant = 'dark', className }: LogoProps) {
+export function Logo({ compact = false, variant = 'dark', subtitle, className }: LogoProps) {
   return (
     <div className={cn('flex items-center gap-2.5', className)}>
       <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm">
@@ -29,7 +30,7 @@ export function Logo({ compact = false, variant = 'dark', className }: LogoProps
         <span className="flex flex-col leading-none">
           <span
             className={cn(
-              'text-[17px] font-bold tracking-tight',
+              'font-serif text-[18px] font-bold tracking-tight',
               variant === 'dark' ? 'text-slate-900' : 'text-white'
             )}
           >
@@ -38,10 +39,10 @@ export function Logo({ compact = false, variant = 'dark', className }: LogoProps
           <span
             className={cn(
               'mt-1 text-[10px] font-semibold uppercase tracking-[0.18em]',
-              variant === 'dark' ? 'text-brand-600' : 'text-brand-100'
+              variant === 'dark' ? 'text-[#145C3A]' : 'text-brand-100'
             )}
           >
-            Daily Deen
+            {subtitle ?? 'Daily Deen'}
           </span>
         </span>
       )}

@@ -1,5 +1,4 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
 import { CheckCircle2, MoonStar, Sparkles } from 'lucide-react'
 import { Logo } from './Logo'
 import { MosqueIllustration, StarPattern } from '../shared/MosqueIllustration'
@@ -38,9 +37,11 @@ export function AuthLayout({
 
         <div className="relative z-10 flex items-center justify-between">
           <Logo variant="light" />
-          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-50">
-            {adminMode ? 'Admin portal' : 'Member portal'}
-          </span>
+          {adminMode && (
+            <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-50">
+              Admin portal
+            </span>
+          )}
         </div>
 
         <div className="relative z-10 mt-20 max-w-md">
@@ -80,12 +81,6 @@ export function AuthLayout({
         <div className="w-full max-w-md animate-fade-up">
           <div className="mb-8 flex items-center justify-between lg:hidden">
             <Logo />
-            <Link
-              to={adminMode ? '/login' : '/admin/login'}
-              className="text-xs font-semibold text-brand-700 hover:underline"
-            >
-              {adminMode ? 'Member login' : 'Admin login'}
-            </Link>
           </div>
 
           <div className="mb-7">

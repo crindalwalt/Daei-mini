@@ -1,318 +1,356 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   ArrowRight,
+  ArrowUpRight,
+  BarChart3,
   BookOpen,
   CalendarDays,
   CheckCircle2,
-  ChevronRight,
-  ClipboardList,
-  Flame,
-  Moon,
-  Plus,
-  Target,
-  TrendingUp,
+  ChevronDown,
+  Droplets,
+  Dumbbell,
+  FileText,
+  Users,
+  UsersRound,
+  type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../features/auth/useAuth'
 import { MosqueIllustration, StarPattern } from '../../components/shared/MosqueIllustration'
-import { StatCard } from '../../components/shared/StatCard'
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card'
+import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
-import { Badge } from '../../components/ui/Badge'
-import { Progress, CircularProgress } from '../../components/ui/Progress'
-import { Avatar } from '../../components/ui/Avatar'
-import { ActivityStatusBadge, ActivityTypeBadge } from '../../components/shared/StatusBadge'
-import {
-  goals,
-  habits,
-  prayerTimes,
-  todaySchedule,
-  userReports,
-} from '../../lib/mockData'
-import { formatDate, formatTime, todayISO } from '../../lib/format'
+import { BarChart } from '../../components/charts/Charts'
+import { activitiesApi } from '../../lib/api/endpoints'
+import { todaySchedule as mockSchedule } from '../../lib/mockData'
+import { formatDate } from '../../lib/format'
 import { cn } from '../../lib/utils'
+import '../../styles/user-dashboard.css'
+
+interface UserMetric {
+  key: string
+  label: string
+  value: number
+  change: number
+  icon: LucideIcon
+  colorClass: 'green' | 'purple' | 'orange' | 'blue'
+}
+
+const userMetrics: UserMetric[] = [
+  {
+    key: 'users',
+    label: 'Total Users',
+    value: 248,
+    change: 12,
+    icon: Users,
+    colorClass: 'green',
+  },
+  {
+    key: 'groups',
+    label: 'Total Groups',
+    value: 18,
+    change: 0,
+    icon: UsersRound,
+    colorClass: 'purple',
+  },
+  {
+    key: 'activities',
+    label: 'Total Activities',
+    value: 1142,
+    change: 15,
+    icon: CalendarDays,
+    colorClass: 'orange',
+  },
+  {
+    key: 'reports',
+    label: 'Total Reports',
+    value: 92,
+    change: 10,
+    icon: FileText,
+    colorClass: 'blue',
+  },
+]
+
+interface PlanItem {
+  id: string | number
+  title: string
+  subtitle: string
+  icon: LucideIcon
+  accent: 'green' | 'orange' | 'blue' | 'purple'
+  current: number
+  target: number
+  unit: string
+}
+
+const defaultPlanItems: PlanItem[] = [
+  {
+    id: 'quran',
+    title: 'Read Quran',
+    subtitle: 'Surah Al-Mulk & daily juz',
+    icon: BookOpen,
+    accent: 'green',
+    current: 15,
+    target: 20,
+    unit: 'mins',
+  },
+  {
+    id: 'exercise',
+    title: 'Exercise',
+    subtitle: 'Morning jog & mobility',
+    icon: Dumbbell,
+    accent: 'orange',
+    current: 30,
+    target: 45,
+    unit: 'mins',
+  },
+  {
+    id: 'water',
+    title: 'Drink Water',
+    subtitle: 'Daily hydration goal',
+    icon: Droplets,
+    accent: 'blue',
+    current: 6,
+    target: 8,
+    unit: 'glasses',
+  },
+]
+
+const weeklyProgressData = [
+  { label: 'Sun', value: 16, secondary: 3 },
+  { label: 'Mon', value: 24, secondary: 2 },
+  { label: 'Tue', value: 28, secondary: 1 },
+  { label: 'Wed', value: 20, secondary: 4 },
+  { label: 'Thu', value: 26, secondary: 2 },
+  { label: 'Fri', value: 22, secondary: 3 },
+  { label: 'Sat', value: 18, secondary: 4 },
+]
 
 export function UserDashboardPage() {
   const { user } = useAuth()
-  const firstName = user?.name?.split(' ')[0] ?? 'Friend'
-  const completed = todaySchedule.filter((activity) => activity.status === 'completed').length
-  const completion = Math.round((completed / todaySchedule.length) * 100)
-  const nextPrayer = prayerTimes.find((prayer) => prayer.status !== 'completed') ?? prayerTimes[0]
-  const activeHabits = habits.filter((habit) => habit.is_active)
-  const averageHabit = Math.round(
-    (activeHabits.reduce((sum, habit) => sum + habit.completed_days / habit.target_per_week, 0) /
-      Math.max(1, activeHabits.length)) *
-      100
-  )
-  const upcomingGoals = goals.filter((goal) => goal.status !== 'completed').slice(0, 3)
-  const latestReport = userReports[0]
+  const [range, setRange] = useState<'this_week' | 'last_week'>('this_week')
+
+  const displayName = user?.name?.trim() ? user.name.split(' ')[0] : 'Hamza'
+
+  const { data: userActivities } = useQuery({
+    queryKey: ['activities', 'today'],
+    queryFn: () => activitiesApi.list(),
+    staleTime: 60_000,
+  })
+
+  // Derive today's plan items, combining core featured items with user's activities
+  const planItems: PlanItem[] = [...defaultPlanItems]
+
+  if (userActivities && userActivities.items.length > 0) {
+    const extraActivity = userActivities.items.find(
+      (a) => !defaultPlanItems.some((d) => d.title.toLowerCase().includes(a.title.toLowerCase()))
+    )
+    if (extraActivity) {
+      planItems.push({
+        id: extraActivity.id,
+        title: extraActivity.title,
+        subtitle: extraActivity.description || 'Scheduled activity',
+        icon: CheckCircle2,
+        accent: 'purple',
+        current: extraActivity.status === 'completed' ? 1 : 0,
+        target: 1,
+        unit: extraActivity.status === 'completed' ? 'done' : 'pending',
+      })
+    }
+  } else if (mockSchedule.length > 0) {
+    const prayer = mockSchedule.find((a) => a.activity_type === 'prayer')
+    if (prayer) {
+      planItems.push({
+        id: prayer.id,
+        title: prayer.title,
+        subtitle: `${prayer.start_time} - ${prayer.end_time}`,
+        icon: CheckCircle2,
+        accent: 'purple',
+        current: prayer.status === 'completed' ? 1 : 0,
+        target: 1,
+        unit: prayer.status === 'completed' ? 'done' : 'due',
+      })
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-700 to-brand-900 p-6 text-white shadow-card sm:p-8">
-        <div className="pattern-dots absolute inset-0 opacity-30" />
-        <StarPattern className="absolute right-8 top-6 hidden h-28 w-28 text-brand-200/60 sm:block" />
-        <MosqueIllustration className="absolute -bottom-4 right-0 hidden w-[380px] text-brand-200/50 lg:block" />
-        <div className="relative z-10 max-w-xl">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-50">
+    <div className="user-dash-page">
+      {/* 1. Welcome Banner (full width) */}
+      <section className="user-hero" aria-label="Welcome banner">
+        <div className="user-hero__pattern" aria-hidden="true" />
+        <div className="user-hero__content">
+          <span className="user-hero__date">
             <CalendarDays className="h-3 w-3" />
-            {formatDate(new Date().toISOString(), { weekday: 'long', day: 'numeric', month: 'long' })}
+            {formatDate(new Date().toISOString(), {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}
           </span>
-          <h1 className="mt-4 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-            Assalamu alaikum, {firstName}
-          </h1>
-          <p className="mt-2 max-w-lg text-sm leading-relaxed text-brand-100/90">
-            You have {todaySchedule.length - completed} activities left today and{' '}
-            {activeHabits.length} active habits. Small, consistent steps — keep going.
+          <h1 className="user-hero__title">Welcome Back, {displayName}!</h1>
+          <p className="user-hero__text">
+            Here&apos;s what&apos;s happening in your daily journey today. Consistency in small deeds brings steady growth and barakah.
           </p>
-          <div className="mt-5 flex flex-wrap gap-2.5">
-            <Link to="/app/activities/new">
-              <Button variant="secondary" className="bg-white text-brand-800 hover:bg-brand-50">
-                <Plus className="h-4 w-4" />
-                Add activity
+          <div className="user-hero__actions">
+            <Link to="/app/schedule">
+              <Button className="user-hero__button">
+                View Schedule
+                <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
             <Link to="/app/reports/new">
-              <Button
-                variant="outline"
-                className="border-white/30 bg-white/5 text-white hover:bg-white/15"
-              >
-                <ClipboardList className="h-4 w-4" />
-                Daily report
+              <Button variant="outline" className="user-hero__button-outline">
+                <FileText className="h-4 w-4" />
+                Daily Report
               </Button>
             </Link>
           </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Today's completion"
-          value={`${completion}%`}
-          icon={CheckCircle2}
-          hint={`${completed} of ${todaySchedule.length} done`}
-        />
-        <StatCard
-          label="Habit consistency"
-          value={`${averageHabit}%`}
-          icon={Flame}
-          accent="amber"
-          hint="this week"
-        />
-        <StatCard
-          label="Active goals"
-          value={upcomingGoals.length}
-          icon={Target}
-          accent="sky"
-          hint="in progress"
-        />
-        <StatCard
-          label="Last report score"
-          value={`${latestReport.calculated_score?.toFixed(0)}%`}
-          icon={TrendingUp}
-          accent="emerald"
-          hint={formatDate(latestReport.report_date)}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-            <div>
-              <CardTitle>Today's schedule</CardTitle>
-              <p className="mt-1 text-sm text-slate-500">{formatDate(todayISO())}</p>
-            </div>
-            <Link to="/app/schedule">
-              <Button variant="ghost" size="sm">
-                View all
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {todaySchedule.slice(0, 5).map((activity) => (
-              <div
-                key={activity.id}
-                className="flex items-center gap-3 rounded-xl border border-slate-100 p-3 transition-colors hover:bg-slate-50/60"
-              >
-                <div className="w-14 shrink-0 text-center">
-                  <p className="text-xs font-bold text-slate-700">{formatTime(activity.start_time)}</p>
-                </div>
-                <div
-                  className={cn(
-                    'h-8 w-1 rounded-full',
-                    activity.status === 'completed'
-                      ? 'bg-emerald-400'
-                      : activity.status === 'missed'
-                        ? 'bg-red-300'
-                        : 'bg-brand-200'
-                  )}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-800">{activity.title}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <ActivityTypeBadge type={activity.activity_type} />
-                  </div>
-                </div>
-                <ActivityStatusBadge status={activity.status} />
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-5">
-          <Card className="overflow-hidden">
-            <div className="bg-gradient-to-br from-brand-600 to-brand-800 p-5 text-white">
-              <div className="flex items-center justify-between">
-                <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-brand-100">
-                  <Moon className="h-3.5 w-3.5" />
-                  Next prayer
-                </div>
-                <Badge className="border-white/20 bg-white/15 text-white">{nextPrayer.status}</Badge>
-              </div>
-              <p className="mt-3 text-2xl font-bold">{nextPrayer.name}</p>
-              <p className="text-sm text-brand-100" dir="rtl">
-                {nextPrayer.arabic}
-              </p>
-              <p className="mt-2 text-3xl font-bold tracking-tight">{formatTime(nextPrayer.time)}</p>
-            </div>
-            <CardContent className="space-y-2 p-4">
-              {prayerTimes.slice(0, 5).map((prayer) => (
-                <div key={prayer.name} className="flex items-center justify-between text-sm">
-                  <span className="inline-flex items-center gap-2 text-slate-600">
-                    <span
-                      className={cn(
-                        'h-1.5 w-1.5 rounded-full',
-                        prayer.status === 'completed'
-                          ? 'bg-emerald-400'
-                          : prayer.status === 'current'
-                            ? 'bg-brand-500'
-                            : 'bg-slate-300'
-                      )}
-                    />
-                    {prayer.name}
-                  </span>
-                  <span className="font-medium text-slate-700">{formatTime(prayer.time)}</span>
-                </div>
-              ))}
-              <Link to="/app/prayer">
-                <Button variant="soft" size="sm" className="mt-1 w-full">
-                  Prayer schedule
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Daily report</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center gap-3">
-              <CircularProgress value={latestReport.calculated_score ?? 0} size={116} strokeWidth={9} />
-              <p className="text-center text-xs text-slate-500">
-                {latestReport.summary}
-              </p>
-              <Link to="/app/reports/new" className="w-full">
-                <Button size="sm" className="w-full">
-                  <ClipboardList className="h-4 w-4" />
-                  Write today's report
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+        <div className="user-hero__art" aria-hidden="true">
+          <span className="user-hero__glow" />
+          <StarPattern className="user-hero__star" />
+          <StarPattern className="user-hero__star user-hero__star--small" />
+          <MosqueIllustration className="user-hero__mosque" />
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-            <div className="flex items-center gap-2">
-              <Flame className="h-4 w-4 text-amber-500" />
-              <CardTitle className="text-base">Habits</CardTitle>
-            </div>
-            <Link to="/app/habits" className="text-xs font-semibold text-brand-700 hover:underline">
-              Manage
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-3.5">
-            {activeHabits.slice(0, 4).map((habit) => {
-              const percent = Math.round((habit.completed_days / habit.target_per_week) * 100)
-              return (
-                <div key={habit.id}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-700">{habit.name}</span>
-                    <span className="text-slate-500">
-                      {habit.completed_days}/{habit.target_per_week} · {habit.streak}🔥
-                    </span>
-                  </div>
-                  <Progress value={percent} size="sm" />
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-            <div className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-sky-500" />
-              <CardTitle className="text-base">Goals</CardTitle>
-            </div>
-            <Link to="/app/goals" className="text-xs font-semibold text-brand-700 hover:underline">
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {upcomingGoals.map((goal) => (
-              <div key={goal.id} className="flex items-center gap-3 rounded-xl border border-slate-100 p-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-800">{goal.title}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {goal.category} · due {formatDate(goal.target_date)}
-                  </p>
-                  <Progress value={goal.progress} size="sm" className="mt-2" />
-                </div>
-                <span className="text-sm font-bold text-slate-700">{goal.progress}%</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {[
-          { label: 'Calendar & planner', description: 'Plan your week ahead', to: '/app/calendar', icon: CalendarDays },
-          { label: 'Journal', description: 'Reflect on your day', to: '/app/journal', icon: BookOpen },
-          { label: 'Digital library', description: 'Browse resources', to: '/app/library', icon: BookOpen },
-        ].map((action) => {
-          const Icon = action.icon
+      {/* 2. Four Summary Metric Cards in a single horizontal row */}
+      <section className="user-metrics-row" aria-label="Summary statistics">
+        {userMetrics.map((metric) => {
+          const Icon = metric.icon
           return (
-            <Link
-              key={action.label}
-              to={action.to}
-              className="group flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-card"
+            <article
+              key={metric.key}
+              className={cn('user-metric-card', `user-metric-card--${metric.colorClass}`)}
             >
-              <span className="rounded-xl bg-brand-50 p-2.5 text-brand-600">
-                <Icon className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-800">{action.label}</p>
-                <p className="text-xs text-slate-500">{action.description}</p>
+              <div className="user-metric-card__top">
+                <span className="user-metric-card__icon">
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="user-metric-card__trend">
+                  <ArrowUpRight className="h-3 w-3" />
+                  +{metric.change}%
+                </span>
               </div>
-              <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-500" />
-            </Link>
+              <p className="user-metric-card__label">{metric.label}</p>
+              <div className="user-metric-card__figure">
+                <strong>{metric.value.toLocaleString()}</strong>
+              </div>
+            </article>
           )
         })}
-      </div>
+      </section>
 
-      <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-xs text-slate-500 shadow-soft">
-        <Avatar name={user?.name ?? 'You'} size="sm" />
-        <span>
-          Signed in as <span className="font-semibold text-slate-700">{user?.email}</span>
-        </span>
-        <Badge variant="success" className="ml-auto" dot>
-          Synced
-        </Badge>
-      </div>
+      {/* 3. Lower Section: Progress Overview (left) + Today's Plan (right) */}
+      <section className="user-lower-section">
+        {/* Progress Overview (left) */}
+        <Card className="user-panel">
+          <div className="user-panel__head">
+            <div className="user-panel__head-left">
+              <span className="user-panel__icon">
+                <BarChart3 className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="user-panel__title">Progress Overview</h2>
+                <p className="user-panel__sub">Daily completed and planned activities</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <select
+                  value={range}
+                  onChange={(e) => setRange(e.target.value as typeof range)}
+                  className="h-8 appearance-none rounded-lg border border-[#DFE7D6] bg-[#F7F9F2] pl-3 pr-7 text-xs font-semibold text-[#25332D] outline-none focus:border-[#12683D]"
+                  aria-label="Progress range"
+                >
+                  <option value="this_week">This Week</option>
+                  <option value="last_week">Last Week</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              </div>
+            </div>
+          </div>
+
+          <div className="user-panel__body">
+            <div className="mb-4 flex items-center justify-between text-xs text-slate-500">
+              <div className="flex items-center gap-4">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-[#12683D]" /> Completed
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-[#D5E6D1]" /> Planned
+                </span>
+              </div>
+              <strong className="text-[#12683D] font-bold">
+                78% completion rate
+              </strong>
+            </div>
+
+            <div className="pt-2">
+              <BarChart
+                data={weeklyProgressData}
+                height={230}
+                showYAxis
+                valueLabel="Completed"
+                secondaryLabel="Planned"
+              />
+            </div>
+          </div>
+        </Card>
+
+        {/* Today's Plan (right) */}
+        <Card className="user-panel">
+          <div className="user-panel__head">
+            <div className="user-panel__head-left">
+              <span className="user-panel__icon">
+                <CalendarDays className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="user-panel__title">Today&apos;s Plan</h2>
+                <p className="user-panel__sub">Scheduled tasks & progress</p>
+              </div>
+            </div>
+            <Link to="/app/schedule" className="user-link">
+              View All
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          <div className="user-panel__body">
+            <div className="user-plan-list">
+              {planItems.map((item) => {
+                const Icon = item.icon
+                const percent = Math.min(100, Math.round((item.current / Math.max(1, item.target)) * 100))
+                return (
+                  <div key={item.id} className="user-plan-row">
+                    <span
+                      className={cn(
+                        'user-plan-row__icon',
+                        `user-plan-row__icon--${item.accent}`
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="user-plan-row__content">
+                      <div className="user-plan-row__top">
+                        <span className="user-plan-row__title">{item.title}</span>
+                        <span className="user-plan-row__val">
+                          {item.unit === 'done' || item.unit === 'due' || item.unit === 'pending'
+                            ? item.unit.toUpperCase()
+                            : `${item.current} / ${item.target} ${item.unit}`}
+                        </span>
+                      </div>
+                      <div className="user-plan-row__bar">
+                        <span style={{ width: `${percent}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </Card>
+      </section>
     </div>
   )
 }

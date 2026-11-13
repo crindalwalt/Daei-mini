@@ -49,6 +49,14 @@ export const router = createBrowserRouter([
     element: <Navigate to="/" replace />,
   },
   {
+    path: '/user',
+    element: <Navigate to="/app" replace />,
+  },
+  {
+    path: '/user/dashboard',
+    element: <Navigate to="/app" replace />,
+  },
+  {
     path: '/login',
     element: (
       <PublicRoute>

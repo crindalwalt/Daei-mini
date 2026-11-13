@@ -23,6 +23,9 @@ export function AppShell({ variant }: AppShellProps) {
   const isAdminDashboard =
     variant === 'admin' &&
     (location.pathname === '/admin' || location.pathname === '/admin/dashboard')
+  const isUserDashboard =
+    variant === 'user' &&
+    (location.pathname === '/app' || location.pathname === '/app/dashboard' || location.pathname === '/user/dashboard')
 
   useEffect(() => {
     setMobileOpen(false)
@@ -37,10 +40,15 @@ export function AppShell({ variant }: AppShellProps) {
   }, [collapsed])
 
   return (
-    <div className={cn('min-h-screen bg-[#f6f8f7]', isAdminDashboard && 'admin-dashboard')}>
+    <div
+      className={cn(
+        'min-h-screen',
+        isAdminDashboard ? 'admin-dashboard bg-[#F0F0E0]' : isUserDashboard ? 'user-dashboard bg-[#F7F6EF]' : 'bg-[#f6f8f7]'
+      )}
+    >
       <Sidebar
         variant={variant}
-        dashboard={isAdminDashboard}
+        dashboard={isAdminDashboard || isUserDashboard}
         collapsed={collapsed}
         mobileOpen={mobileOpen}
         onToggleCollapse={() => setCollapsed((value) => !value)}
@@ -53,7 +61,7 @@ export function AppShell({ variant }: AppShellProps) {
         <div className={collapsed ? 'lg:pl-[84px]' : 'lg:pl-[270px]'}>
           <Topbar
             variant={variant}
-            dashboard={isAdminDashboard}
+            dashboard={isAdminDashboard || isUserDashboard}
             onMenu={() => setMobileOpen(true)}
           />
           <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">

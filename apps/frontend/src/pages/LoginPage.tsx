@@ -169,16 +169,6 @@ export function LoginPage({ adminMode = false }: LoginPageProps) {
           <Sparkles className="h-3.5 w-3.5 text-brand-600" />
           Fill Demo Credentials (admin@thinkcode.dev)
         </Button>
-
-        <div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-slate-400">
-          <span>{adminMode ? 'Admin portal' : 'Member portal'}</span>
-          <Link
-            to={adminMode ? '/login' : '/admin/login'}
-            className="font-semibold text-slate-500 hover:text-brand-700 hover:underline"
-          >
-            {adminMode ? 'Go to member login' : 'Go to admin login'}
-          </Link>
-        </div>
       </div>
     </AuthLayout>
   )

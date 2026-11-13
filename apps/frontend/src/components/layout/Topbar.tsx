@@ -160,7 +160,7 @@ export function Topbar({ variant, dashboard = false, onMenu }: TopbarProps) {
             }}
             onFocus={() => setSearchOpen(true)}
             onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
-            placeholder={variant === 'admin' ? 'Search users, groups, reports…' : 'Search your activities and pages…'}
+            placeholder={variant === 'admin' ? 'Search...' : 'Search for tasks...'}
             className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-100"
             aria-label="Search"
           />
@@ -197,20 +197,13 @@ export function Topbar({ variant, dashboard = false, onMenu }: TopbarProps) {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2.5">
-          {!dashboard && (
-            <span className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 md:inline-flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              All systems operational
-            </span>
-          )}
-
           <Link
             to={variant === 'admin' ? '/admin/notifications' : '/app/notifications'}
             className="relative rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
             aria-label="Notifications"
           >
             <Bell className="h-[18px] w-[18px]" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white" />
+            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#E3483E] ring-2 ring-white" />
           </Link>
 
           <div className="relative" ref={menuRef}>
@@ -221,9 +214,9 @@ export function Topbar({ variant, dashboard = false, onMenu }: TopbarProps) {
               aria-haspopup="menu"
               aria-expanded={menuOpen}
             >
-              <Avatar name={user?.name ?? 'Guest User'} size="sm" />
+              <Avatar name={variant === 'admin' ? 'Admin' : (user?.name ?? 'User')} size="sm" />
               <span className="hidden max-w-[120px] truncate text-sm font-semibold text-slate-700 md:block">
-                {user?.name ?? 'Guest'}
+                {variant === 'admin' ? 'Admin' : (user?.name ?? 'Member')}
               </span>
               <ChevronDown
                 className={cn(
